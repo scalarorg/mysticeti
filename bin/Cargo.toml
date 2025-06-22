@@ -1,0 +1,23 @@
+[package]
+name = "bin"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+consensus-core = { workspace = true }
+consensus-config = { workspace = true }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
+clap = { version = "4.3.3", features = ["derive"] }
+eyre = "0.6.8"
+color-eyre = "0.6.2"
+rand = "0.8.5"
+mysten-metrics = { workspace = true }
+prometheus = { workspace = true }
+sui-protocol-config = { workspace = true }
