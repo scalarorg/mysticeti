@@ -3,13 +3,13 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use clap::{command, Parser};
+use clap::{Parser, command};
 use eyre::{Context, Result};
 use futures::future;
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
-use consensus_config::{local_committee_and_keys, AuthorityIndex, Parameters};
+use consensus_config::{AuthorityIndex, Parameters, local_committee_and_keys};
 use consensus_core::{
     Clock, CommitConsumer, ConsensusAuthority, TransactionIndex, TransactionVerifier,
     ValidationError,
@@ -17,6 +17,8 @@ use consensus_core::{
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
 use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
+
+mod abci_app;
 
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;

@@ -1,10 +1,22 @@
 [package]
 name = "bin"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "bin"
+path = "src/main.rs"
+
+[[bin]]
+name = "validator-network"
+path = "src/validator_main.rs"
+
+[[bin]]
+name = "test-client"
+path = "src/test_main.rs"
 
 [dependencies]
 tokio = { workspace = true }
@@ -21,3 +33,17 @@ rand = "0.8.5"
 mysten-metrics = { workspace = true }
 prometheus = { workspace = true }
 sui-protocol-config = { workspace = true }
+
+# New dependencies for validator node
+axum = { version = "0.7", features = ["macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
+reqwest = { version = "0.11", features = ["json"] }
+fastcrypto = { workspace = true }
+
+# Tendermint integration
+tendermint-abci = { version = "0.40", default-features = false, features = ["kvstore-app", "binary"] }
+tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }
+tendermint-proto = { version = "0.40", default-features = false }
+async-trait = "0.1"

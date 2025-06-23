@@ -25,18 +25,13 @@ use super::{config::PrivateConfig, ProtocolCommands, ProtocolMetrics};
 const CARGO_FLAGS: &str = "--release";
 const RUST_FLAGS: &str = "RUSTFLAGS=-C\\ target-cpu=native";
 const METRICS_ROUTE: &str = "/metrics";
-/// The type of benchmarks supported by Mysticeti.
-/// Note that all transactions are interpreted as both owned and shared.
-#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MysticetiBenchmarkType {
-    /// The transaction size in bytes.
-    transaction_size: usize,
-}
+// The type of benchmarks supported by Mysticeti.
+// Note that all transactions are interpreted as both owned and shared.
 
-impl Debug for MysticetiBenchmarkType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.transaction_size)
-    }
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct MysticetiBenchmarkType {
+    // The transaction size in bytes.
+    transaction_size: usize,
 }
 
 impl Display for MysticetiBenchmarkType {
@@ -204,13 +199,10 @@ impl ProtocolMetrics for MysticetiProtocol {
             .map(|(i, instance)| {
                 // Use a default metrics port pattern: 8000 + instance index
                 let metrics_port = 8000 + i as u16;
-                let instance_clone = instance.clone();
+                let main_ip = instance.main_ip;
                 (
                     instance,
-                    format!(
-                        "http://{}:{}{}",
-                        instance_clone.main_ip, metrics_port, METRICS_ROUTE
-                    ),
+                    format!("http://{}:{}{}", main_ip, metrics_port, METRICS_ROUTE),
                 )
             })
             .collect()
