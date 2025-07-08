@@ -15,7 +15,7 @@ use consensus_core::{
 use mysten_metrics::RegistryService;
 use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
 
-use crate::abci_app::MysticetiAbciApp;
+use crate::abci::app::MysticetiAbciApp;
 
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;

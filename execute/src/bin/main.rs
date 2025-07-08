@@ -18,8 +18,6 @@ use mysten_metrics::RegistryService;
 use prometheus::Registry;
 use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
 
-mod abci_app;
-
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
 

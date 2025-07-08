@@ -7,17 +7,13 @@ use std::path::PathBuf;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
 
-mod abci_app;
-mod validator_network;
-mod validator_node;
-
-use validator_network::ValidatorNetwork;
+use execute::validator::ValidatorNetwork;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// The working directory where the validator nodes will store their data.
-    #[clap(long, value_name = "DIR", default_value = "validator-network")]
+    #[clap(long, value_name = "DIR", default_value = ".data")]
     working_directory: PathBuf,
 }
 

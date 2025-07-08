@@ -8,7 +8,7 @@ use consensus_config::local_committee_and_keys;
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
 
-use crate::validator_node::ValidatorNode;
+use crate::validator::node::ValidatorNode;
 
 pub struct ValidatorNetwork {
     working_directory: PathBuf,
@@ -51,13 +51,12 @@ impl ValidatorNetwork {
             let mut node =
                 ValidatorNode::new(authority_index, self.working_directory.clone(), rpc_port);
 
+            // Create a unique registry for each node to avoid conflicts
+            let node_registry_service = RegistryService::new(Registry::new());
+
             // Start the node
-            node.start(
-                committee.clone(),
-                keypairs.clone(),
-                self.registry_service.clone(),
-            )
-            .await?;
+            node.start(committee.clone(), keypairs.clone(), node_registry_service)
+                .await?;
 
             self.nodes.push(node);
 

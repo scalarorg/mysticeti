@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Mysticeti Validator Node 0
+  mysticeti-node0:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysticeti-node0
+    ports:
+      - "26657:26657"  # RPC port
+      - "26670:26670"  # ABCI port
+    volumes:
+      - ./data/node0:/app/data
+    environment:
+      - RUST_LOG=info
+    command: [
+      "--authority-index", "0",
+      "--rpc-port", "26657",
+      "--abci-port", "26670",
+      "--working-directory", "/app/data"
+    ]
+    networks:
+      - mysticeti-network
+    restart: unless-stopped
+
+  # Mysticeti Validator Node 1
+  mysticeti-node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysticeti-node1
+    ports:
+      - "26658:26657"  # RPC port
+      - "26671:26671"  # ABCI port
+    volumes:
+      - ./data/node1:/app/data
+    environment:
+      - RUST_LOG=info
+    command: [
+      "--authority-index", "1",
+      "--rpc-port", "26657",
+      "--abci-port", "26671",
+      "--working-directory", "/app/data"
+    ]
+    networks:
+      - mysticeti-network
+    restart: unless-stopped
+
+  # Mysticeti Validator Node 2
+  mysticeti-node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysticeti-node2
+    ports:
+      - "26659:26657"  # RPC port
+      - "26672:26672"  # ABCI port
+    volumes:
+      - ./data/node2:/app/data
+    environment:
+      - RUST_LOG=info
+    command: [
+      "--authority-index", "2",
+      "--rpc-port", "26657",
+      "--abci-port", "26672",
+      "--working-directory", "/app/data"
+    ]
+    networks:
+      - mysticeti-network
+    restart: unless-stopped
+
+  # Mysticeti Validator Node 3
+  mysticeti-node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysticeti-node3
+    ports:
+      - "26660:26657"  # RPC port
+      - "26673:26673"  # ABCI port
+    volumes:
+      - ./data/node3:/app/data
+    environment:
+      - RUST_LOG=info
+    command: [
+      "--authority-index", "3",
+      "--rpc-port", "26657",
+      "--abci-port", "26673",
+      "--working-directory", "/app/data"
+    ]
+    networks:
+      - mysticeti-network
+    restart: unless-stopped
+
+networks:
+  mysticeti-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  node0-data:
+  node1-data:
+  node2-data:
+  node3-data: 

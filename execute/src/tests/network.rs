@@ -6,9 +6,9 @@ use eyre::Result;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
 
-mod test_client;
+mod client;
 
-use test_client::{check_network_health, test_transaction_sending};
+use client::{check_network_health, test_transaction_sending};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

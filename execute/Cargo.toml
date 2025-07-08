@@ -1,5 +1,5 @@
 [package]
-name = "bin"
+name = "execute"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -8,15 +8,16 @@ license = "Apache-2.0"
 
 [[bin]]
 name = "bin"
-path = "src/main.rs"
+path = "src/bin/main.rs"
 
 [[bin]]
-name = "validator-network"
-path = "src/validator_main.rs"
+name = "network"
+path = "src/bin/network.rs"
 
 [[bin]]
-name = "test-client"
-path = "src/test_main.rs"
+name = "validator"
+path = "src/bin/validator.rs"
+
 
 [dependencies]
 tokio = { workspace = true }
@@ -35,11 +36,11 @@ prometheus = { workspace = true }
 sui-protocol-config = { workspace = true }
 
 # New dependencies for validator node
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-base64 = "0.21"
-reqwest = { version = "0.11", features = ["json"] }
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["json"] }
 fastcrypto = { workspace = true }
 
 # Tendermint integration
@@ -47,3 +48,10 @@ tendermint-abci = { version = "0.40", default-features = false, features = ["kvs
 tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }
 tendermint-proto = { version = "0.40", default-features = false }
 async-trait = "0.1"
+
+[dev-dependencies]
+# Test dependencies
+tokio-test = "0.4"
+assert2 = "0.3"
+test-log = "0.2"
+tempfile = "3.8"
