@@ -1,0 +1,258 @@
+# CometBFT configuration for Mysticeti integration
+# This file should be placed in ~/.cometbft/config/config.toml
+
+# This is a TOML config file.
+# For more information, see https://github.com/toml-lang/toml
+
+##### main base config options #####
+
+# TCP or UNIX socket address for the RPC server to listen on
+rpc_laddr = "tcp://127.0.0.1:26657"
+
+# A custom HTTP path to serve CometBFT RPC.
+# If this is set, the RPC server will serve CometBFT RPC at the path.
+# The default is to serve at the root path `/`.
+# rpc_path = "cometbft"
+
+# TCP or UNIX socket address for the P2P server to listen on
+p2p_laddr = "tcp://0.0.0.0:26656"
+
+# Address to advertise to peers for them to dial
+# If empty, will use the same port as the laddr,
+# and will introspect on the listener or use UPnP
+# to figure out the address.
+p2p_external_address = ""
+
+# Comma separated list of seed nodes to connect to
+# We only use these if we can't connect to seeds in the genesis
+# or the address book
+seeds = ""
+
+# Comma separated list of nodes to keep persistent connections to
+# Do not add private peers to this list if you don't want them advertised
+persistent_peers = ""
+
+# UPNP port forwarding
+upnp = false
+
+# Path to address book for our peer addresses
+addr_book_file = "config/addrbook.json"
+
+# Set true for strict address routability rules
+# Set false for private or local networks
+addr_book_strict = true
+
+# Maximum number of addresses in the address book
+addr_book_max_entries = 1000
+
+# Maximum number of simultaneous connections (inbound and outbound)
+max_num_inbound_peers = 40
+
+# Maximum number of simultaneous outbound connections
+max_num_outbound_peers = 10
+
+# Maximum number of connections from a single peer
+max_connections_per_peer = 3
+
+# Maximum number of connections from a single IP
+max_connections_per_ip = 5
+
+# List of node IDs, to which a connection will be (re)established if any
+unconditional_peer_ids = ""
+
+# Maximum pause when redialing a persistent peer (if zero, exponential backoff is used)
+persistent_peers_max_dial_period = "0s"
+
+# Time to wait before flushing messages out on the connection
+flush_throttle_timeout = "100ms"
+
+# Maximum size of a message packet payload, in bytes
+max_packet_msg_payload_size = 1024
+
+# Rate at which packets are sent (packets per second)
+send_rate = 5120000
+
+# Rate at which packets are received (packets per second)
+recv_rate = 5120000
+
+# Set true to enable the peer-exchange reactor
+pex = true
+
+# Seed mode, in which node constantly crawls the network and looks for
+# peers. If false, the node will stop doing this after the first successful connection
+seed_mode = false
+
+# Comma separated list of peer IDs to keep private (will not be gossiped to other peers)
+private_peer_ids = ""
+
+# Toggle to disable guard against peers connecting from the same ip
+allow_duplicate_ip = false
+
+# Peer connection configuration.
+handshake_timeout = "20s"
+dial_timeout = "3s"
+
+##### consensus configuration options #####
+
+[consensus]
+
+wal_file = "data/cs.wal/wal"
+
+timeout_propose = "3s"
+timeout_propose_delta = "500ms"
+timeout_prevote = "1s"
+timeout_prevote_delta = "250ms"
+timeout_precommit = "1s"
+timeout_precommit_delta = "250ms"
+timeout_commit = "1s"
+
+# Make progress as soon as we have all the precommits (as if TimeoutCommit = 0)
+skip_timeout_commit = false
+
+# EmptyBlock mode and possible interval between empty blocks in seconds
+create_empty_blocks = true
+create_empty_blocks_interval = "0s"
+
+# Reactor sleep duration parameters are in milliseconds
+peer_gossip_sleep_duration = "100ms"
+peer_query_maj23_sleep_duration = "2s"
+
+##### mempool configuration options #####
+
+[mempool]
+
+version = "v1"
+
+recheck = true
+broadcast = true
+wal_dir = ""
+
+# Maximum number of transactions in the mempool
+size = 5000
+
+# Limit the total size of all txs in the mempool.
+# This only accounts for raw transactions (e.g. given 1MB transactions and
+# max_txs_bytes=5MB, mempool will only accept 5 transactions).
+max_txs_bytes = 1073741824
+
+# Size of the cache (used to filter transactions we saw earlier) in transactions
+cache_size = 10000
+
+# Do not remove invalid transactions from the cache (default: false)
+# Set to true if it's not possible for any invalid transaction to become
+# valid again in the future.
+keep_invalid_txs_in_cache = false
+
+# Maximum size of each transaction in the mempool (in bytes)
+max_tx_bytes = 1048576
+
+# Maximum size of a batch of transactions to send to a peer
+# Including space needed by encoding (one varint per transaction).
+# XXX: Unused due to https://github.com/tendermint/tendermint/issues/5799
+max_batch_bytes = 0
+
+##### fast sync configuration options #####
+
+[fastsync]
+
+version = "v0"
+
+# Fast Sync version to use:
+# * v0: the legacy fast sync implementation
+# * v1: refactored implementation
+# * v2: complete refactor of the fast sync algorithm
+# https://github.com/tendermint/tendermint/blob/main/docs/architecture/adr-071-fast-sync-v2.md
+version = "v2"
+
+# Maximum block height to download during catchup
+# When 0, complete catchup is disabled
+# When negative, the node does not perform any catchup
+# When positive and the node is behind the peer by this height, it will
+# perform a complete catchup (all blocks) and then switch to consensus mode
+# When positive and the node is not behind by this height, it will
+# perform a partial catchup (new blocks) and then switch to consensus mode
+# For more details, see the spec for the new fast sync algorithm
+# https://github.com/tendermint/tendermint/blob/main/docs/architecture/adr-071-fast-sync-v2.md
+# Default: 1000
+max_peer_block_height = 1000
+
+# Disable fast sync
+# When true, the node will not perform fast sync.
+# The node will still perform catchup if it is behind and
+# max_peer_block_height is set to a positive value.
+# Default: false
+disable = false
+
+# Maximum amount of time to spend downloading a chunk
+# Default: 10 minutes
+chunk_request_timeout = "10m"
+
+# Maximum number of concurrent chunk requests
+# Default: 4
+chunk_fetchers = 4
+
+##### state sync configuration options #####
+
+[statesync]
+
+# State sync rapidly bootstraps a new node by discovering, requesting, and
+# restoring state machine snapshots from peers instead of replaying
+# years of blockchain history. State sync is not supported if the application
+# has not implemented the required ABCI methods.
+enable = false
+
+# RPC servers (comma-separated) for light client verification of the
+# synced state machine and the state machines running on connected peers.
+# For example you can use CometBFT RPC servers, or the servers of
+# your application.
+#
+# For more details, see:
+# https://docs.cometbft.com/main/spec/p2p/messages/state-sync.html
+rpc_servers = ""
+
+# Trusted height and corresponding hash from a light client verified
+# header of the primary blockchain used to verify the first
+# received state machine snapshot.
+trust_height = 0
+trust_hash = ""
+
+# Time duration to discover snapshots before falling back to regular
+# fast sync (i.e. downloading the block headers and applying the
+# transactions).
+discovery_time = "15s"
+
+# Temporary directory for state sync snapshot chunks, defaults to
+# os.TempDir(). The directory is automatically cleaned up when
+# the node is stopped.
+temp_dir = ""
+
+# The timeout duration before the snapshot chunks are pruned,
+# regardless of the height it's synced to. The default value is
+# 24 hours. The value should be positive and is represented as
+# a time duration (e.g: 1h, 30m, 1h30m, etc.).
+chunk_request_timeout = "24h"
+
+# The number of concurrent chunk requests. The default value is
+# 4. The value should be positive.
+chunk_fetchers = 4
+
+##### instrumentation configuration options #####
+
+[instrumentation]
+
+# When true, Prometheus metrics are served under /metrics on
+# PrometheusListenAddr.
+# Check out the documentation for the list of available metrics.
+prometheus = false
+
+# Address to listen for Prometheus collector(s) connections.
+prometheus_listen_addr = ":26660"
+
+# Maximum number of simultaneous connections.
+# If you want to accept more significant number than the default, make sure
+# you increase your OS limits.
+# 0 - unlimited.
+max_open_connections = 3
+
+# Instrumentation namespace
+namespace = "cometbft" 

@@ -18,6 +18,9 @@ path = "src/bin/network.rs"
 name = "validator"
 path = "src/bin/validator.rs"
 
+[[bin]]
+name = "enhanced_validator"
+path = "src/bin/enhanced_validator.rs"
 
 [dependencies]
 tokio = { workspace = true }
@@ -48,6 +51,17 @@ tendermint-abci = { version = "0.40", default-features = false, features = ["kvs
 tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }
 tendermint-proto = { version = "0.40", default-features = false }
 async-trait = "0.1"
+
+# gRPC dependencies
+tonic = { version = "0.10", features = ["transport", "prost"] }
+prost = "0.12"
+
+# Additional dependencies for enhanced integration
+parking_lot = "0.12"
+tap = "1.0"
+
+[build-dependencies]
+tonic-build = "0.10"
 
 [dev-dependencies]
 # Test dependencies

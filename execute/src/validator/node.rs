@@ -113,8 +113,11 @@ impl ValidatorNode {
         // Start ABCI server with consensus output sender
         self.start_abci_server().await?;
 
-        // Start RPC server
-        self.start_rpc_server().await?;
+        // Start CommetBft RPC server
+        self.start_commetbft_rpc_server().await?;
+
+        // Start EVM RPC server
+        self.start_evm_rpc_server().await?;
 
         info!(
             "Validator node {} started successfully",
@@ -167,7 +170,9 @@ impl ValidatorNode {
         Ok(())
     }
 
-    async fn start_rpc_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn start_commetbft_rpc_server(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting RPC server on port {}", self.rpc_port);
 
         // Create a channel to forward transactions from RPC to ABCI
@@ -300,6 +305,11 @@ impl ValidatorNode {
             axum::serve(listener, app).await.unwrap();
         });
 
+        Ok(())
+    }
+
+    async fn start_evm_rpc_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("Starting EVM RPC server on port {}", self.rpc_port);
         Ok(())
     }
 

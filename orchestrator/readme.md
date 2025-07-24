@@ -62,14 +62,6 @@ Create a file called `settings.json` that contains all the configuration paramet
 }
 ```
 
-The documentation of the `Settings` struct in `./src/settings.rs` provides detailed information about each field and indicates which ones are optional. If you're working with a private GitHub repository, you can include a [private access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) in the repository URL. For example, if your access token is `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`, the repository URL should be formatted as follows:
-
-```json
-"repository": {
-  "url": "http://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@github.com/mystenlabs/project-mysticeti.git",
-  "commit": "orchestrator"
-}
-```
 
 ## Step 3. Create a testbed
 

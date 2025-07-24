@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package mysticeti.grpc;
+
+option go_package = "github.com/mysticeti/grpc";
+
+// Service for handling Mysticeti consensus operations
+service MysticetiService {
+  // Submit a transaction to the consensus
+  rpc SubmitTransaction(TransactionRequest) returns (TransactionResponse);
+  
+  // Get current consensus status
+  rpc GetConsensusStatus(ConsensusStatusRequest) returns (ConsensusStatus);
+}
+
+// Request to submit a transaction
+message TransactionRequest {
+  bytes transaction = 1;
+}
+
+// Response to transaction submission
+message TransactionResponse {
+  bool success = 1;
+  string message = 2;
+  BlockRef block_ref = 3;
+}
+
+// Block reference information
+message BlockRef {
+  uint64 round = 1;
+  uint32 authority = 2;
+  uint64 sequence = 3;
+}
+
+// Request for consensus status
+message ConsensusStatusRequest {
+  // Empty for now, can be extended later
+}
+
+// Current consensus status
+message ConsensusStatus {
+  bool is_running = 1;
+  uint64 current_round = 2;
+  uint64 total_transactions = 3;
+} 
