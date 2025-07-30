@@ -4,7 +4,7 @@ services:
   # Mysticeti Validator Node 0
   mysticeti-node0:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest
     container_name: mysticeti-node0
@@ -28,7 +28,7 @@ services:
   # Mysticeti Validator Node 1
   mysticeti-node1:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest  
     container_name: mysticeti-node1
@@ -52,7 +52,7 @@ services:
   # Mysticeti Validator Node 2
   mysticeti-node2:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest    
     container_name: mysticeti-node2
@@ -76,7 +76,7 @@ services:
   # Mysticeti Validator Node 3
   mysticeti-node3:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest    
     container_name: mysticeti-node3

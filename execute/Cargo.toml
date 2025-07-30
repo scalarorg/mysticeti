@@ -7,8 +7,8 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "bin"
-path = "src/bin/main.rs"
+name = "single-node"
+path = "src/bin/single_node.rs"
 
 [[bin]]
 name = "network"
@@ -17,10 +17,6 @@ path = "src/bin/network.rs"
 [[bin]]
 name = "validator"
 path = "src/bin/validator.rs"
-
-[[bin]]
-name = "enhanced_validator"
-path = "src/bin/enhanced_validator.rs"
 
 [dependencies]
 tokio = { workspace = true }

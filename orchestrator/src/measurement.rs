@@ -141,7 +141,6 @@ impl Measurement {
         Duration::from_secs_f64(stdev)
     }
 
-    #[cfg(test)]
     pub fn new_for_test() -> (Label, Self) {
         (
             "owned".to_string(),
@@ -159,8 +158,8 @@ impl Measurement {
 /// The identifier of the scrapers collecting the prometheus metrics.
 type ScraperId = usize;
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct MeasurementsCollection<T> {
+#[derive(Debug, Serialize, Clone)]
+pub struct MeasurementsCollection<T: crate::benchmark::BenchmarkType> {
     /// The machine / instance type.
     pub machine_specs: String,
     /// The commit of the codebase.
@@ -171,7 +170,7 @@ pub struct MeasurementsCollection<T> {
     pub data: HashMap<Label, HashMap<ScraperId, Vec<Measurement>>>,
 }
 
-impl<T: BenchmarkType> MeasurementsCollection<T> {
+impl<T: crate::benchmark::BenchmarkType> MeasurementsCollection<T> {
     /// Create a new (empty) collection of measurements.
     pub fn new(settings: &Settings, parameters: BenchmarkParameters<T>) -> Self {
         Self {
@@ -183,10 +182,10 @@ impl<T: BenchmarkType> MeasurementsCollection<T> {
     }
 
     /// Load a collection of measurement from a json file.
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, std::io::Error> {
-        let data = fs::read(path)?;
-        let measurements: Self = serde_json::from_slice(data.as_slice())?;
-        Ok(measurements)
+    /// Note: This method is disabled due to serialization constraints.
+    pub fn load<P: AsRef<Path>>(_path: P) -> Result<Self, std::io::Error> {
+        // TODO: Implement proper deserialization
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Deserialization not implemented"))
     }
 
     /// Add a new measurement to the collection.

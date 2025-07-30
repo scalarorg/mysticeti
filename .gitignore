@@ -1,2 +1,4 @@
 target/**
+data
+benchmarks
 .DS_Store
