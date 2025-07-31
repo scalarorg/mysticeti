@@ -15,14 +15,19 @@ services:
       - ./data/node0:/app/data
     environment:
       - RUST_LOG=info
+      - NODE_INDEX=0
+      - NODE_IP=172.20.0.10
+      - PEER_ADDRESSES=${PEER_ADDRESSES_NODE0:-172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657}
     command: [
       "--authority-index", "0",
       "--rpc-port", "26657",
       "--abci-port", "26670",
-      "--working-directory", "/app/data"
+      "--working-directory", "/app/data",
+      "--peer-addresses", "${PEER_ADDRESSES_NODE0:-172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657}"
     ]
     networks:
-      - mysticeti-network
+      mysticeti-network:
+        ipv4_address: ${NODE0_IP:-172.20.0.10}
     restart: unless-stopped
 
   # Mysticeti Validator Node 1
@@ -39,14 +44,19 @@ services:
       - ./data/node1:/app/data
     environment:
       - RUST_LOG=info
+      - NODE_INDEX=1
+      - NODE_IP=172.20.0.11
+      - PEER_ADDRESSES=${PEER_ADDRESSES_NODE1:-172.20.0.10:26657,172.20.0.12:26657,172.20.0.13:26657}
     command: [
       "--authority-index", "1",
       "--rpc-port", "26657",
       "--abci-port", "26671",
-      "--working-directory", "/app/data"
+      "--working-directory", "/app/data",
+      "--peer-addresses", "${PEER_ADDRESSES_NODE1:-172.20.0.10:26657,172.20.0.12:26657,172.20.0.13:26657}"
     ]
     networks:
-      - mysticeti-network
+      mysticeti-network:
+        ipv4_address: ${NODE1_IP:-172.20.0.11}
     restart: unless-stopped
 
   # Mysticeti Validator Node 2
@@ -63,14 +73,19 @@ services:
       - ./data/node2:/app/data
     environment:
       - RUST_LOG=info
+      - NODE_INDEX=2
+      - NODE_IP=172.20.0.12
+      - PEER_ADDRESSES=${PEER_ADDRESSES_NODE2:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.13:26657}
     command: [
       "--authority-index", "2",
       "--rpc-port", "26657",
       "--abci-port", "26672",
-      "--working-directory", "/app/data"
+      "--working-directory", "/app/data",
+      "--peer-addresses", "${PEER_ADDRESSES_NODE2:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.13:26657}"
     ]
     networks:
-      - mysticeti-network
+      mysticeti-network:
+        ipv4_address: ${NODE2_IP:-172.20.0.12}
     restart: unless-stopped
 
   # Mysticeti Validator Node 3
@@ -87,14 +102,19 @@ services:
       - ./data/node3:/app/data
     environment:
       - RUST_LOG=info
+      - NODE_INDEX=3
+      - NODE_IP=172.20.0.13
+      - PEER_ADDRESSES=${PEER_ADDRESSES_NODE3:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.12:26657}
     command: [
       "--authority-index", "3",
       "--rpc-port", "26657",
       "--abci-port", "26673",
-      "--working-directory", "/app/data"
+      "--working-directory", "/app/data",
+      "--peer-addresses", "${PEER_ADDRESSES_NODE3:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.12:26657}"
     ]
     networks:
-      - mysticeti-network
+      mysticeti-network:
+        ipv4_address: ${NODE3_IP:-172.20.0.13}
     restart: unless-stopped
 
 networks:
@@ -102,7 +122,8 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: ${NETWORK_SUBNET:-172.20.0.0/16}
+          gateway: ${NETWORK_GATEWAY:-172.20.0.1}
 
 volumes:
   node0-data:

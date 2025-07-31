@@ -111,13 +111,10 @@ impl ValidatorNode {
             .await;
 
         // Start ABCI server with consensus output sender
-        self.start_abci_server().await?;
+        //self.start_abci_server().await?;
 
-        // Start CommetBft RPC server
-        self.start_commetbft_rpc_server().await?;
-
-        // Start EVM RPC server
-        self.start_evm_rpc_server().await?;
+        // Start RPC server
+        self.start_rpc_server().await?;
 
         info!(
             "Validator node {} started successfully",
@@ -170,30 +167,41 @@ impl ValidatorNode {
         Ok(())
     }
 
-    async fn start_commetbft_rpc_server(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn start_rpc_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting RPC server on port {}", self.rpc_port);
 
         // Create a channel to forward transactions from RPC to ABCI
         let (rpc_tx_sender, mut rpc_tx_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1000);
-        let transaction_sender = self.transaction_sender.clone();
+        let transaction_client = self
+            .consensus_authority
+            .as_ref()
+            .unwrap()
+            .transaction_client();
 
-        // Start transaction forwarding from RPC to ABCI
+        // Start transaction forwarding from RPC to consensus
         tokio::spawn(async move {
             while let Some(tx_data) = rpc_tx_receiver.recv().await {
                 info!(
-                    "Forwarding transaction from RPC to ABCI: {} bytes",
+                    "Forwarding transaction from RPC to consensus: {} bytes",
                     tx_data.len()
                 );
                 // Forward to Mysticeti consensus
-                if let Err(e) = transaction_sender.send(tx_data).await {
-                    error!("Failed to forward transaction to ABCI: {}", e);
+                // Submit transaction to Mysticeti consensus authority using the transaction client
+                match transaction_client.submit(vec![tx_data]).await {
+                    Ok((block_ref, _status_receiver)) => {
+                        info!(
+                            "Transaction submitted successfully to Mysticeti consensus, included in block: {:?}",
+                            block_ref
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to submit transaction to Mysticeti consensus: {}", e);
+                    }
                 }
             }
         });
 
-        let addr: SocketAddr = format!("127.0.0.1:{}", self.rpc_port).parse()?;
+        let addr: SocketAddr = format!("0.0.0.0:{}", self.rpc_port).parse()?;
 
         tokio::spawn(async move {
             use axum::{
@@ -308,11 +316,6 @@ impl ValidatorNode {
         Ok(())
     }
 
-    async fn start_evm_rpc_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting EVM RPC server on port {}", self.rpc_port);
-        Ok(())
-    }
-
     async fn start_transaction_processing(
         &self,
         mut commit_receiver: mysten_metrics::monitored_mpsc::UnboundedReceiver<
@@ -332,10 +335,10 @@ impl ValidatorNode {
                     committed_subdag.blocks.len()
                 );
 
-                // Forward consensus output to ABCI app
-                if let Err(e) = consensus_output_sender.send(committed_subdag).await {
-                    error!("Failed to forward consensus output to ABCI: {}", e);
-                }
+                // Todo: Forward consensus output to ABCI app
+                // if let Err(e) = consensus_output_sender.send(committed_subdag).await {
+                //     error!("Failed to forward consensus output to ABCI: {}", e);
+                // }
             }
         });
 

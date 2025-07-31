@@ -37,6 +37,43 @@ pub fn local_committee_and_keys(
     (committee, key_pairs)
 }
 
+/// Creates a committee for Docker network testing with static IP addresses.
+pub fn docker_committee_and_keys(
+    epoch: Epoch,
+    authorities_stake: Vec<Stake>,
+) -> (Committee, Vec<(NetworkKeyPair, ProtocolKeyPair)>) {
+    let mut authorities = vec![];
+    let mut key_pairs = vec![];
+    let mut rng = StdRng::from_seed([0; 32]);
+
+    // Docker network IP addresses for the 4-node network
+    let docker_ips = vec!["172.20.0.10", "172.20.0.11", "172.20.0.12", "172.20.0.13"];
+    let network_ports = vec![26657, 26657, 26657, 26657]; // All nodes use port 26657 internally
+
+    for (i, stake) in authorities_stake.into_iter().enumerate() {
+        let authority_keypair = AuthorityKeyPair::generate(&mut rng);
+        let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
+        let network_keypair = NetworkKeyPair::generate(&mut rng);
+
+        // Use Docker network address
+        let address = format!("/ip4/{}/udp/{}", docker_ips[i], network_ports[i]);
+        let address = address.parse().unwrap();
+
+        authorities.push(Authority {
+            stake,
+            address,
+            hostname: format!("mysticeti-node{}", i).to_string(),
+            authority_key: authority_keypair.public(),
+            protocol_key: protocol_keypair.public(),
+            network_key: network_keypair.public(),
+        });
+        key_pairs.push((network_keypair, protocol_keypair));
+    }
+
+    let committee = Committee::new(epoch, authorities);
+    (committee, key_pairs)
+}
+
 /// Returns a local address with an ephemeral port.
 fn get_available_local_address() -> Multiaddr {
     let host = "127.0.0.1";

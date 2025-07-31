@@ -162,8 +162,8 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # Build the binary if needed
-echo "Building benchmark binary..."
-cargo build --release --bin benchmark
+# echo "Building benchmark binary..."
+# cargo build --release --bin benchmark
 
 echo ""
 

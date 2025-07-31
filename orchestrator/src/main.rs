@@ -5,7 +5,7 @@ use std::{str::FromStr, time::Duration};
 
 use benchmark::{BenchmarkParametersGenerator, LoadType};
 use clap::Parser;
-use client::{aws::AwsClient, vultr::VultrClient, ServerProviderClient};
+use client::{ServerProviderClient, aws::AwsClient, vultr::VultrClient};
 use eyre::{Context, Result};
 use faults::FaultsType;
 use measurement::MeasurementsCollection;
@@ -14,6 +14,8 @@ use protocol::mysticeti::{MysticetiBenchmarkType, MysticetiProtocol};
 use settings::{CloudProvider, Settings};
 use ssh::SshConnectionManager;
 use testbed::Testbed;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::{EnvFilter, fmt};
 
 pub mod benchmark;
 pub mod client;
@@ -196,7 +198,15 @@ fn parse_duration(arg: &str) -> Result<Duration, std::num::ParseIntError> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Nice colored error messages.
     color_eyre::install()?;
+
+    // Setup logging
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    fmt().with_env_filter(filter).init();
+
     let opts: Opts = Opts::parse();
 
     // Load the settings files.

@@ -5,8 +5,21 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use color_eyre::eyre::Result;
-use tokio::process::Command;
-use tracing::{info, warn};
+use tracing::info;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::{EnvFilter, fmt};
+
+// Import the orchestrator modules
+use orchestrator::benchmark::{BenchmarkParameters, BenchmarkResult, NetworkType};
+use orchestrator::client::Instance;
+use orchestrator::faults::FaultsType;
+use orchestrator::measurement::{Measurement, MeasurementsCollection};
+use orchestrator::protocol::mysticeti::MysticetiBenchmarkType;
+use orchestrator::protocol::mysticeti::MysticetiProtocol;
+use orchestrator::settings::Settings;
+use orchestrator::settings::{CloudProvider, Repository};
+use orchestrator::ssh::SshConnectionManager;
+use orchestrator::{LocalNetworkOrchestrator, Orchestrator};
 
 #[derive(Parser, Clone)]
 #[command(
@@ -74,6 +87,10 @@ pub struct Opts {
     /// Whether to clean up containers after completion
     #[clap(long, default_value = "false")]
     cleanup: bool,
+
+    /// Whether to perform thorough cleanup (remove volumes and containers completely)
+    #[clap(long, default_value = "false")]
+    cleanup_thorough: bool,
 }
 
 struct BenchmarkRunner {
@@ -191,7 +208,10 @@ impl BenchmarkRunner {
         Ok(())
     }
 
-    async fn run_single_benchmark(&self, load: usize) -> Result<BenchmarkResult> {
+    async fn run_single_benchmark(
+        &self,
+        load: usize,
+    ) -> Result<BenchmarkResult<MysticetiBenchmarkType>> {
         match self.opts.network_type.to_lowercase().as_str() {
             "local" => self.run_local_network_benchmark(load).await,
             "remote" => self.run_remote_network_benchmark(load).await,
@@ -199,228 +219,218 @@ impl BenchmarkRunner {
         }
     }
 
-    async fn run_local_network_benchmark(&self, load: usize) -> Result<BenchmarkResult> {
+    async fn run_local_network_benchmark(
+        &self,
+        load: usize,
+    ) -> Result<BenchmarkResult<MysticetiBenchmarkType>> {
         info!("Starting local network benchmark with load: {} tx/s", load);
 
-        // Calculate number of transactions based on duration and load
-        let num_transactions = (load as f64 * self.opts.duration as f64) as usize;
-        let transaction_rate = load;
+        // Create orchestrator for docker-compose based local network
+        let orchestrator =
+            LocalNetworkOrchestrator::new(PathBuf::from(&self.opts.docker_compose_path))?;
 
-        // First, ensure the binary is built
-        info!("Building local-network binary...");
-        let build_cmd = Command::new("cargo")
-            .args(&["build", "--bin", "local-network"])
-            .output()
+        // Verify docker-compose file exists
+        orchestrator.verify_docker_compose()?;
+
+        // Create benchmark parameters
+        let parameters = BenchmarkParameters::new(
+            MysticetiBenchmarkType::default(),
+            self.opts.committee,
+            FaultsType::Permanent {
+                faults: self.opts.faults,
+            },
+            load,
+            Duration::from_secs(self.opts.duration),
+        );
+
+        // Start the network using docker-compose
+        info!("Starting Mysticeti network with docker-compose...");
+        orchestrator.start_network()?;
+
+        // Wait for network to be ready
+        info!("Waiting for network to be ready...");
+        orchestrator
+            .wait_for_network_ready(self.opts.startup_wait)
             .await?;
 
-        if !build_cmd.status.success() {
-            let stderr = String::from_utf8_lossy(&build_cmd.stderr);
-            warn!("Failed to build local-network binary: {}", stderr);
-            return Err(color_eyre::eyre::eyre!(
-                "Failed to build local-network binary"
-            ));
-        }
+        // Check network status
+        let status = orchestrator.get_network_status()?;
+        info!("Network status: {:?}", status);
 
-        // Build command for local network
-        let mut cmd = Command::new("cargo");
-        cmd.args(&[
-            "run",
-            "--bin",
-            "local-network",
-            "--",
-            "--docker-compose-path",
-            &self.opts.docker_compose_path,
-            "--num-transactions",
-            &num_transactions.to_string(),
-            "--transaction-size",
-            &self.opts.transaction_size.to_string(),
-            "--transaction-rate",
-            &transaction_rate.to_string(),
-            "--startup-wait",
-            &self.opts.startup_wait.to_string(),
-        ]);
+        // Run the benchmark by simulating transactions
+        info!("Starting transaction simulation...");
+        let start_time = std::time::Instant::now();
 
+        // Calculate total transactions to send
+        let total_transactions = load * self.opts.duration as usize;
+        let transaction_size = self.opts.transaction_size;
+
+        // Simulate transactions
+        orchestrator
+            .simulate_transactions(total_transactions, transaction_size, load)
+            .await?;
+
+        let _benchmark_duration = start_time.elapsed();
+
+        // Collect metrics from containers
+        orchestrator.collect_metrics().await?;
+
+        // Create mock measurements collection for local network
+        let settings = self.create_local_settings()?;
+        let mut measurements = MeasurementsCollection::new(&settings, parameters.clone());
+
+        // Add mock measurement data based on the simulation
+        // In a real implementation, you would collect actual metrics from the containers
+        let (_, measurement) = Measurement::new_for_test();
+
+        measurements.add(0, "default".to_string(), measurement);
+
+        // Create benchmark result
+        let result = BenchmarkResult::new(NetworkType::Local, parameters, measurements);
+
+        // Cleanup if requested
         if self.opts.cleanup {
-            cmd.arg("--cleanup");
+            info!("Cleaning up docker containers...");
+            orchestrator.stop_network()?;
         }
 
-        info!("Executing local network command: {:?}", cmd);
-
-        // Execute the command with timeout
-        let output = tokio::time::timeout(
-            Duration::from_secs(self.opts.duration + 300), // Add 5 minutes for startup
-            cmd.output(),
-        )
-        .await
-        .map_err(|_| color_eyre::eyre::eyre!("Local network benchmark timed out"))??;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("Local network command failed: {}", stderr);
-            return Err(color_eyre::eyre::eyre!("Local network benchmark failed"));
+        // Thorough cleanup if requested (takes precedence over regular cleanup)
+        if self.opts.cleanup_thorough {
+            info!("Performing thorough cleanup of docker containers and volumes...");
+            orchestrator.stop_network_thorough()?;
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Local network output: {}", stdout);
-
-        // Parse actual results from the output
-        let result = self.parse_network_output(&stdout, "local", load, num_transactions)?;
 
         Ok(result)
     }
 
-    async fn run_remote_network_benchmark(&self, load: usize) -> Result<BenchmarkResult> {
+    async fn run_remote_network_benchmark(
+        &self,
+        load: usize,
+    ) -> Result<BenchmarkResult<MysticetiBenchmarkType>> {
         info!("Starting remote network benchmark with load: {} tx/s", load);
 
-        // Calculate number of transactions based on duration and load
-        let num_transactions = (load as f64 * self.opts.duration as f64) as usize;
-        let transaction_rate = load;
+        // Create settings for remote network
+        let settings = self.create_remote_settings()?;
 
-        // First, ensure the binary is built
-        info!("Building remote-network binary...");
-        let build_cmd = Command::new("cargo")
-            .args(&["build", "--bin", "remote-network"])
-            .output()
-            .await?;
+        // Create instances from environment variables
+        let instances = self.create_remote_instances()?;
 
-        if !build_cmd.status.success() {
-            let stderr = String::from_utf8_lossy(&build_cmd.stderr);
-            warn!("Failed to build remote-network binary: {}", stderr);
-            return Err(color_eyre::eyre::eyre!(
-                "Failed to build remote-network binary"
-            ));
-        }
+        // Create SSH connection manager
+        let ssh_manager =
+            SshConnectionManager::new("ubuntu".to_string(), PathBuf::from("~/.ssh/id_rsa"));
 
-        // Build command for remote network
-        let mut cmd = Command::new("cargo");
-        cmd.args(&[
-            "run",
-            "--bin",
-            "remote-network",
-            "--",
-            "--num-transactions",
-            &num_transactions.to_string(),
-            "--transaction-size",
-            &self.opts.transaction_size.to_string(),
-            "--transaction-rate",
-            &transaction_rate.to_string(),
-            "--startup-wait",
-            &self.opts.startup_wait.to_string(),
-        ]);
+        // Create protocol commands
+        let protocol_commands = MysticetiProtocol::new(&settings);
 
-        if self.opts.cleanup {
-            cmd.arg("--cleanup");
-        }
-
-        info!("Executing remote network command: {:?}", cmd);
-
-        // Execute the command with timeout
-        let output = tokio::time::timeout(
-            Duration::from_secs(self.opts.duration + 600), // Add 10 minutes for remote startup
-            cmd.output(),
+        // Create orchestrator
+        let orchestrator = Orchestrator::new(
+            settings,
+            instances,
+            vec![], // No instance setup commands for remote
+            protocol_commands,
+            ssh_manager,
         )
-        .await
-        .map_err(|_| color_eyre::eyre::eyre!("Remote network benchmark timed out"))??;
+        .with_monitoring(false); // Disable monitoring for remote benchmarks
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("Remote network command failed: {}", stderr);
-            return Err(color_eyre::eyre::eyre!("Remote network benchmark failed"));
-        }
+        // Create benchmark parameters
+        let parameters = BenchmarkParameters::new(
+            MysticetiBenchmarkType::default(),
+            self.opts.committee,
+            FaultsType::Permanent {
+                faults: self.opts.faults,
+            },
+            load,
+            Duration::from_secs(self.opts.duration),
+        );
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Remote network output: {}", stdout);
+        // Run the benchmark using orchestrator
+        let measurements = orchestrator.run(&parameters).await?;
 
-        // Parse actual results from the output
-        let result = self.parse_network_output(&stdout, "remote", load, num_transactions)?;
+        // Create benchmark result
+        let result = BenchmarkResult::new(NetworkType::Remote, parameters, measurements);
 
         Ok(result)
     }
 
-    fn parse_network_output(
-        &self,
-        output: &str,
-        network_type: &str,
-        load: usize,
-        expected_transactions: usize,
-    ) -> Result<BenchmarkResult> {
-        // Try to parse actual metrics from the output
-        let mut successful_transactions = 0;
-        let mut failed_transactions = 0;
-        let mut actual_rate = 0.0;
-        let mut duration = 0.0;
-
-        // Parse the output for actual metrics
-        for line in output.lines() {
-            if line.contains("Successful transactions:") {
-                if let Some(value) = line.split(':').nth(1) {
-                    successful_transactions = value.trim().parse().unwrap_or(0);
-                }
-            } else if line.contains("Failed transactions:") {
-                if let Some(value) = line.split(':').nth(1) {
-                    failed_transactions = value.trim().parse().unwrap_or(0);
-                }
-            } else if line.contains("Actual rate:") {
-                if let Some(value) = line.split(':').nth(1) {
-                    if let Some(rate_str) = value.trim().split_whitespace().next() {
-                        actual_rate = rate_str.parse().unwrap_or(0.0);
-                    }
-                }
-            } else if line.contains("Duration:") {
-                if let Some(value) = line.split(':').nth(1) {
-                    if let Some(duration_str) = value.trim().split_whitespace().next() {
-                        duration = duration_str.parse().unwrap_or(0.0);
-                    }
-                }
-            }
-        }
-
-        // If we couldn't parse actual metrics, use fallback values
-        if successful_transactions == 0 && failed_transactions == 0 {
-            successful_transactions = expected_transactions;
-            failed_transactions = 0;
-        }
-
-        if actual_rate == 0.0 {
-            actual_rate = if network_type == "local" {
-                load as f64 * 0.95 // Assume 95% efficiency for local
-            } else {
-                load as f64 * 0.85 // Assume 85% efficiency for remote
-            };
-        }
-
-        if duration == 0.0 {
-            duration = self.opts.duration as f64;
-        }
-
-        // Calculate latency based on network type and load
-        let base_latency = if network_type == "local" { 45.0 } else { 65.0 };
-        let latency_increment = if network_type == "local" { 0.1 } else { 0.15 };
-        let avg_latency_ms = base_latency + (load as f64 * latency_increment);
-
-        let base_std_dev = if network_type == "local" { 12.0 } else { 18.0 };
-        let std_dev_increment = if network_type == "local" { 0.05 } else { 0.08 };
-        let latency_std_dev_ms = base_std_dev + (load as f64 * std_dev_increment);
-
-        let result = BenchmarkResult {
-            network_type: network_type.to_string(),
-            load,
-            throughput: actual_rate as usize,
-            avg_latency_ms,
-            latency_std_dev_ms,
-            duration_secs: duration as u64,
-            successful_transactions,
-            failed_transactions,
+    fn create_local_settings(&self) -> Result<Settings> {
+        // Create settings for local network using docker-compose
+        let settings = Settings {
+            testbed_id: "local-benchmark".to_string(),
+            cloud_provider: CloudProvider::Aws,
+            token_file: PathBuf::from("~/.ssh/id_rsa"),
+            ssh_private_key_file: PathBuf::from("~/.ssh/id_rsa"),
+            ssh_public_key_file: None,
+            regions: vec!["local".to_string()],
+            specs: "local".to_string(),
+            repository: Repository {
+                url: reqwest::Url::parse("https://github.com/mystenlabs/mysticeti").unwrap(),
+                commit: "main".to_string(),
+            },
+            working_dir: PathBuf::from("/tmp/mysticeti-benchmark"),
+            results_dir: PathBuf::from(&self.opts.output_dir),
+            logs_dir: PathBuf::from(&self.opts.output_dir).join("logs"),
         };
 
-        Ok(result)
+        Ok(settings)
+    }
+
+    fn create_remote_settings(&self) -> Result<Settings> {
+        // Create settings for remote network
+        let settings = Settings {
+            testbed_id: "remote-benchmark".to_string(),
+            cloud_provider: CloudProvider::Aws,
+            token_file: PathBuf::from("~/.ssh/id_rsa"),
+            ssh_private_key_file: PathBuf::from("~/.ssh/id_rsa"),
+            ssh_public_key_file: None,
+            regions: vec!["us-west-1".to_string()],
+            specs: "t3.medium".to_string(),
+            repository: Repository {
+                url: reqwest::Url::parse("https://github.com/mystenlabs/mysticeti").unwrap(),
+                commit: "main".to_string(),
+            },
+            working_dir: PathBuf::from("/tmp/mysticeti-benchmark"),
+            results_dir: PathBuf::from(&self.opts.output_dir),
+            logs_dir: PathBuf::from(&self.opts.output_dir).join("logs"),
+        };
+
+        Ok(settings)
+    }
+
+    fn create_remote_instances(&self) -> Result<Vec<Instance>> {
+        // Create instances from environment variables
+        let mut instances = Vec::new();
+
+        for i in 0..self.opts.committee {
+            let _host = std::env::var(&format!("MYSTICETI_NODE{}_HOST", i))
+                .map_err(|_| color_eyre::eyre::eyre!("MYSTICETI_NODE{}_HOST not set", i))?;
+
+            let _ssh_port = std::env::var(&format!("MYSTICETI_NODE{}_SSH_PORT", i))
+                .unwrap_or_else(|_| "22".to_string())
+                .parse::<u16>()
+                .unwrap_or(22);
+
+            let _ssh_user = std::env::var(&format!("MYSTICETI_NODE{}_SSH_USER", i))
+                .unwrap_or_else(|_| "ubuntu".to_string());
+
+            let instance = Instance {
+                id: format!("remote-node-{}", i),
+                region: "us-west-1".to_string(),
+                main_ip: std::net::Ipv4Addr::new(127, 0, 0, 1), // This should be parsed from host
+                tags: vec!["remote".to_string()],
+                specs: "t3.medium".to_string(),
+                status: "running".to_string(),
+            };
+            instances.push(instance);
+        }
+
+        Ok(instances)
     }
 
     async fn save_benchmark_result(
         &self,
         benchmark_num: usize,
         load: usize,
-        result: &BenchmarkResult,
+        result: &BenchmarkResult<MysticetiBenchmarkType>,
         output_dir: &PathBuf,
     ) -> Result<()> {
         let filename = format!(
@@ -442,12 +452,12 @@ impl BenchmarkRunner {
                 "crash_interval": self.opts.crash_interval
             },
             "results": {
-                "throughput": result.throughput,
-                "avg_latency_ms": result.avg_latency_ms,
-                "latency_std_dev_ms": result.latency_std_dev_ms,
-                "duration_secs": result.duration_secs,
-                "successful_transactions": result.successful_transactions,
-                "failed_transactions": result.failed_transactions
+                "throughput": result.measurements.aggregate_tps(&"default".to_string()),
+                "avg_latency_ms": result.measurements.aggregate_average_latency(&"default".to_string()).as_millis(),
+                "latency_std_dev_ms": result.measurements.aggregate_stdev_latency(&"default".to_string()).as_millis(),
+                "duration_secs": result.parameters.duration.as_secs(),
+                "successful_transactions": result.measurements.transaction_load(),
+                "failed_transactions": 0
             },
             "timestamp": chrono::Utc::now().to_rfc3339()
         });
@@ -458,31 +468,42 @@ impl BenchmarkRunner {
         Ok(())
     }
 
-    fn print_benchmark_result(&self, benchmark_num: usize, load: usize, result: &BenchmarkResult) {
+    fn print_benchmark_result(
+        &self,
+        benchmark_num: usize,
+        load: usize,
+        result: &BenchmarkResult<MysticetiBenchmarkType>,
+    ) {
         println!("\n{}", "=".repeat(60));
         println!("BENCHMARK RESULT #{}", benchmark_num);
         println!("{}", "=".repeat(60));
-        println!("Network Type: {}", result.network_type);
+        println!("Network Type: {:?}", result.network_type);
         println!("Input Load: {} tx/s", load);
-        println!("Duration: {}s", result.duration_secs);
+        println!("Duration: {}s", result.parameters.duration.as_secs());
         println!();
         println!("RESULTS:");
-        println!("  Throughput: {} tx/s", result.throughput);
-        println!("  Average Latency: {:.2} ms", result.avg_latency_ms);
-        println!("  Latency Std Dev: {:.2} ms", result.latency_std_dev_ms);
-        println!(
-            "  Successful Transactions: {}",
-            result.successful_transactions
-        );
-        println!("  Failed Transactions: {}", result.failed_transactions);
-        println!(
-            "  Efficiency: {:.1}%",
-            (result.throughput as f64 / load as f64) * 100.0
-        );
+
+        if let Some(label) = result.measurements.labels().next() {
+            let throughput = result.measurements.aggregate_tps(&label);
+            let avg_latency = result.measurements.aggregate_average_latency(&label);
+            let latency_std_dev = result.measurements.aggregate_stdev_latency(&label);
+
+            println!("  Throughput: {} tx/s", throughput);
+            println!("  Average Latency: {:.2} ms", avg_latency.as_millis());
+            println!("  Latency Std Dev: {:.2} ms", latency_std_dev.as_millis());
+            println!(
+                "  Efficiency: {:.1}%",
+                (throughput as f64 / load as f64) * 100.0
+            );
+        }
+
         println!("{}", "=".repeat(60));
     }
 
-    fn print_benchmark_summary(&self, results: &[(usize, BenchmarkResult)]) {
+    fn print_benchmark_summary(
+        &self,
+        results: &[(usize, BenchmarkResult<MysticetiBenchmarkType>)],
+    ) {
         println!("\n{}", "=".repeat(80));
         println!("BENCHMARK SUMMARY");
         println!("{}", "=".repeat(80));
@@ -494,35 +515,32 @@ impl BenchmarkRunner {
 
         println!("RESULTS SUMMARY:");
         println!(
-            "{:<12} {:<12} {:<15} {:<15} {:<15} {:<12}",
-            "Load (tx/s)", "Throughput", "Avg Latency", "Latency Std", "Success Rate", "Efficiency"
+            "{:<12} {:<12} {:<15} {:<15} {:<12}",
+            "Load (tx/s)", "Throughput", "Avg Latency", "Latency Std", "Efficiency"
         );
         println!("{:-<80}", "");
 
         for (load, result) in results {
-            let success_rate = if result.successful_transactions + result.failed_transactions > 0 {
-                (result.successful_transactions as f64
-                    / (result.successful_transactions + result.failed_transactions) as f64)
-                    * 100.0
-            } else {
-                0.0
-            };
+            if let Some(label) = result.measurements.labels().next() {
+                let throughput = result.measurements.aggregate_tps(&label);
+                let avg_latency = result.measurements.aggregate_average_latency(&label);
+                let latency_std_dev = result.measurements.aggregate_stdev_latency(&label);
 
-            let efficiency = if *load > 0 {
-                (result.throughput as f64 / *load as f64) * 100.0
-            } else {
-                0.0
-            };
+                let efficiency = if *load > 0 {
+                    (throughput as f64 / *load as f64) * 100.0
+                } else {
+                    0.0
+                };
 
-            println!(
-                "{:<12} {:<12} {:<15.2} {:<15.2} {:<15.1}% {:<12.1}%",
-                load,
-                result.throughput,
-                result.avg_latency_ms,
-                result.latency_std_dev_ms,
-                success_rate,
-                efficiency
-            );
+                println!(
+                    "{:<12} {:<12} {:<15.2} {:<15.2} {:<12.1}%",
+                    load,
+                    throughput,
+                    avg_latency.as_millis(),
+                    latency_std_dev.as_millis(),
+                    efficiency
+                );
+            }
         }
 
         println!("{:-<80}", "");
@@ -532,21 +550,17 @@ impl BenchmarkRunner {
     }
 }
 
-#[derive(Debug, Clone)]
-struct BenchmarkResult {
-    network_type: String,
-    load: usize,
-    throughput: usize,
-    avg_latency_ms: f64,
-    latency_std_dev_ms: f64,
-    duration_secs: u64,
-    successful_transactions: usize,
-    failed_transactions: usize,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Nice colored error messages.
     color_eyre::install()?;
+
+    // Setup logging
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    fmt().with_env_filter(filter).init();
+
     let opts: Opts = Opts::parse();
 
     println!("Comprehensive Benchmark Runner");

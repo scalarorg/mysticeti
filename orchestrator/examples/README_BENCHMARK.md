@@ -12,6 +12,34 @@ The comprehensive benchmark runner provides:
 - **Comparison Analysis**: Automatic comparison between local and remote network performance
 - **Flexible Configuration**: Customizable parameters for different network types
 
+## Local vs Remote Network Comparison
+
+### Architecture Differences
+
+| Aspect | Remote Network | Local Network |
+|--------|---------------|---------------|
+| **Infrastructure** | AWS/Vultr instances | Docker containers |
+| **Connection** | SSH to remote hosts | Local Docker commands |
+| **Network** | Real network latency | Local network (minimal latency) |
+| **Setup** | Cloud provider setup | Docker Compose |
+| **Scaling** | Limited by cloud instances | Limited by local resources |
+
+### Implementation Differences
+
+#### Remote Network Approach
+
+- Uses `Orchestrator` with SSH connections
+- Requires cloud provider credentials
+- Manages remote instances via SSH
+- Collects metrics from remote Prometheus endpoints
+
+#### Local Network Approach
+
+- Uses `LocalNetworkOrchestrator` with Docker commands
+- Uses local Docker Compose setup
+- Manages containers via Docker CLI
+- Simulates transactions to local endpoints
+
 ## Features
 
 ### Network Types
@@ -43,6 +71,127 @@ The benchmark runner now **actually starts networks and simulates transactions**
 - Network comparison statistics
 - Success/failure rates
 - Network efficiency
+
+## Local Network System
+
+### Docker Setup
+
+The local network uses a `docker-compose.yml` file that defines 4 Mysticeti validator nodes:
+
+```yaml
+services:
+  mysticeti-node0:
+    build: .
+    ports:
+      - "26657:26657"  # RPC port
+      - "26670:26670"  # ABCI port
+    environment:
+      - NODE_INDEX=0
+      - PEER_ADDRESSES=172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657
+    networks:
+      mysticeti-network:
+        ipv4_address: 172.20.0.10
+
+  # ... similar for nodes 1-3
+```
+
+### Container Management
+
+The `LocalNetworkOrchestrator` provides several methods for managing containers:
+
+#### Container Status
+
+```rust
+// Check if container is running
+orchestrator.is_container_running("mysticeti-node0")?;
+
+// Get network status
+orchestrator.get_network_status()?;
+```
+
+#### Container Logs
+
+```rust
+// Get container logs for debugging
+let logs = orchestrator.get_container_logs("mysticeti-node0")?;
+```
+
+#### Network Operations
+
+```rust
+// Start network
+orchestrator.start_network()?;
+
+// Stop network
+orchestrator.stop_network()?;
+
+// Thorough cleanup (removes volumes and containers)
+orchestrator.stop_network_thorough()?;
+```
+
+### Transaction Simulation
+
+The local benchmark simulates transactions by:
+
+1. **Round-robin distribution**: Sends transactions to different nodes in rotation
+2. **Rate limiting**: Controls transaction rate using delays
+3. **HTTP requests**: Uses JSON-RPC endpoints exposed by containers
+4. **Base64 encoding**: Encodes transaction data for transmission
+
+```rust
+// Example transaction payload
+let payload = json!({
+    "jsonrpc": "2.0",
+    "id": i,
+    "method": "broadcast_tx_async",
+    "params": {
+        "tx": base64::encode(&tx_data)
+    }
+});
+```
+
+### How Local Network Works
+
+#### 1. Network Startup
+
+```rust
+// Start Docker containers
+orchestrator.start_network()?;
+
+// Wait for network to be ready
+orchestrator.wait_for_network_ready(startup_wait).await?;
+```
+
+#### 2. Transaction Simulation
+
+```rust
+// Simulate transactions to local endpoints
+orchestrator.simulate_transactions(
+    total_transactions,
+    transaction_size,
+    load,
+).await?;
+```
+
+#### 3. Metrics Collection
+
+```rust
+// Collect metrics from containers
+orchestrator.collect_metrics().await?;
+
+// Create measurement collection
+let measurements = MeasurementsCollection::new(&settings, parameters);
+```
+
+#### 4. Results Processing
+
+```rust
+// Create benchmark result
+let result = BenchmarkResult::new(NetworkType::Local, parameters, measurements);
+
+// Save results
+result.save_to_file(&output_dir)?;
+```
 
 ## Usage
 
@@ -80,6 +229,14 @@ cargo run --bin benchmark -- \
   --duration 180 \
   --committee 4 \
   --cleanup
+
+# Local network with thorough cleanup (removes volumes and containers completely)
+cargo run --bin benchmark -- \
+  --network-type local \
+  --local-loads 100,500,1000 \
+  --duration 300 \
+  --transaction-size 1024 \
+  --cleanup-thorough
 ```
 
 ### Command Line Options
@@ -96,6 +253,7 @@ cargo run --bin benchmark -- \
 - `--docker-compose-path`: Path to docker-compose.yml for local network (default: `./docker-compose.yml`)
 - `--startup-wait`: Wait time for network startup in seconds (default: `30`)
 - `--cleanup`: Whether to clean up containers after completion (default: `false`)
+- `--cleanup-thorough`: Whether to perform thorough cleanup (remove volumes and containers completely) (default: `false`)
 
 ## Prerequisites
 
@@ -273,3 +431,104 @@ RUST_LOG=debug cargo run --bin benchmark -- --network-type local
 - **Remote Network**: Limited by network latency and remote server performance
 - **Transaction Rate**: Adjust based on network capacity
 - **Duration**: Longer durations provide more stable results but take more time
+
+### Local vs Remote Performance
+
+| Metric | Local Network | Remote Network |
+|--------|---------------|----------------|
+| **Latency** | ~1-5ms | ~50-200ms |
+| **Throughput** | Higher (no network overhead) | Lower (network overhead) |
+| **Resource Usage** | Limited by local machine | Limited by cloud instances |
+| **Cost** | Free (local resources) | Cloud provider costs |
+
+### Optimization Tips
+
+1. **Resource allocation**: Ensure sufficient CPU/memory for containers
+2. **Network configuration**: Use bridge networking for container communication
+3. **Storage**: Use volume mounts for persistent data
+4. **Monitoring**: Enable container metrics collection
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Docker not running**: Ensure Docker is running for local benchmarks
+2. **Missing environment variables**: Set required host variables for remote benchmarks
+3. **SSH connection issues**: Verify SSH keys and connectivity for remote servers
+4. **Build failures**: Check that all dependencies are installed
+
+### Local Network Specific Issues
+
+1. **Docker not running**
+
+   ```
+   Error: Docker is not running. Please start Docker and try again.
+   ```
+
+2. **docker-compose.yml not found**
+
+   ```
+   Error: docker-compose.yml not found at ../docker-compose.yml
+   ```
+
+3. **Containers not starting**
+
+   ```bash
+   # Check container status
+   docker ps
+   
+   # Check container logs
+   docker logs mysticeti-node0
+   ```
+
+4. **Network connectivity issues**
+
+   ```bash
+   # Test node endpoints
+   curl http://localhost:26657/health
+   ```
+
+### Debugging
+
+Use the enhanced container management methods:
+
+```rust
+// Check network status
+orchestrator.get_network_status()?;
+
+// Get container logs
+let logs = orchestrator.get_container_logs("mysticeti-node0")?;
+println!("Node 0 logs: {}", logs);
+```
+
+### Debug Mode
+
+Enable verbose logging by setting the `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=debug cargo run --bin benchmark -- --network-type local
+```
+
+## Future Enhancements
+
+### Planned Improvements
+
+1. **Real metrics collection**: Collect actual Prometheus metrics from containers
+2. **Container monitoring**: Real-time container health monitoring
+3. **Load generation**: More sophisticated load generation patterns
+4. **Fault injection**: Simulate node failures and recovery
+5. **Network simulation**: Add network latency and packet loss simulation
+
+### Integration with Remote System
+
+The local system can be enhanced to:
+
+- Use the same metrics collection as remote systems
+- Support the same benchmark parameters
+- Provide comparable results for validation
+
+## Conclusion
+
+The local network benchmark system provides a convenient way to test and benchmark Mysticeti without requiring cloud infrastructure. While it has different characteristics than remote networks, it serves as an excellent development and testing tool.
+
+For production benchmarking, use the remote network system for more realistic results that include network latency and cloud infrastructure characteristics.

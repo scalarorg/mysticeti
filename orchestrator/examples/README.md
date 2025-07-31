@@ -41,6 +41,15 @@ cargo run --bin local-network \
   --transaction-rate 200 \
   --startup-wait 45 \
   --cleanup
+
+# With thorough cleanup (removes volumes and containers completely)
+cargo run --bin local-network \
+  --docker-compose-path ./docker-compose.yml \
+  --num-transactions 2000 \
+  --transaction-size 1024 \
+  --transaction-rate 200 \
+  --startup-wait 45 \
+  --cleanup-thorough
 ```
 
 #### Parameters
@@ -51,6 +60,7 @@ cargo run --bin local-network \
 - `--transaction-rate`: Transaction rate in tx/s (default: 100)
 - `--startup-wait`: Wait time for network startup in seconds (default: 30)
 - `--cleanup`: Whether to clean up containers after completion (default: false)
+- `--cleanup-thorough`: Whether to perform thorough cleanup (remove volumes and containers completely) (default: false)
 
 #### How it works
 
