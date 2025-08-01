@@ -270,7 +270,7 @@ impl LocalNetworkOrchestrator {
         );
 
         let client = Client::new();
-        //let delay = Duration::from_millis((1000 / transaction_rate) as u64);
+        let delay = Duration::from_millis((1000 / transaction_rate) as u64);
         let mut successful_txs = 0;
         let mut failed_txs = 0;
         let start_time = Instant::now();
@@ -309,7 +309,7 @@ impl LocalNetworkOrchestrator {
             }
 
             // Rate limiting
-            //sleep(delay).await;
+            sleep(delay).await;
         }
 
         let duration = start_time.elapsed();
