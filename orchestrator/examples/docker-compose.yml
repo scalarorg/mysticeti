@@ -4,13 +4,12 @@ services:
   # Mysticeti Validator Node 0
   mysticeti-node0:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest
     container_name: mysticeti-node0
     ports:
       - "26657:26657"  # RPC port
-      - "26670:26670"  # ABCI port
     volumes:
       - ./data/node0:/app/data
     environment:
@@ -33,13 +32,12 @@ services:
   # Mysticeti Validator Node 1
   mysticeti-node1:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest  
     container_name: mysticeti-node1
     ports:
       - "26658:26657"  # RPC port
-      - "26671:26671"  # ABCI port
     volumes:
       - ./data/node1:/app/data
     environment:
@@ -62,13 +60,12 @@ services:
   # Mysticeti Validator Node 2
   mysticeti-node2:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest    
     container_name: mysticeti-node2
     ports:
       - "26659:26657"  # RPC port
-      - "26672:26672"  # ABCI port
     volumes:
       - ./data/node2:/app/data
     environment:
@@ -91,13 +88,12 @@ services:
   # Mysticeti Validator Node 3
   mysticeti-node3:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     image: scalarorg/mysticeti:latest    
     container_name: mysticeti-node3
     ports:
       - "26660:26657"  # RPC port
-      - "26673:26673"  # ABCI port
     volumes:
       - ./data/node3:/app/data
     environment:

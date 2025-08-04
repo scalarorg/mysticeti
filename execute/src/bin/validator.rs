@@ -1,8 +1,8 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use execute::validator::ValidatorNode;
 use clap::{Parser, command};
+use execute::validator::ValidatorNode;
 use eyre::Result;
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
@@ -29,6 +29,10 @@ struct Args {
     /// The ABCI port for this validator node.
     #[clap(long, value_name = "PORT")]
     abci_port: Option<u16>,
+
+    /// Comma-separated list of peer addresses (e.g., "172.20.0.11:26657,172.20.0.12:26657")
+    #[clap(long, value_name = "ADDRESSES")]
+    peer_addresses: Option<String>,
 
     /// Enable debug logging.
     #[clap(long)]
@@ -75,10 +79,18 @@ async fn main() -> Result<()> {
         args.rpc_port,
     );
 
-    // Create committee and keypairs for single node (for testing)
+    // Create committee and keypairs - use Docker configuration if peer addresses are provided
     let committee_size = 4; // We'll create a 4-node committee even for single node
-    let (committee, keypairs) =
-        consensus_config::local_committee_and_keys(0, vec![1; committee_size]);
+    let (committee, keypairs) = if args.peer_addresses.is_some() {
+        info!(
+            "Using Docker network configuration with peer addresses: {:?}",
+            args.peer_addresses
+        );
+        consensus_config::docker_committee_and_keys(0, vec![1; committee_size])
+    } else {
+        info!("Using local network configuration");
+        consensus_config::local_committee_and_keys(0, vec![1; committee_size])
+    };
 
     // Create metrics registry
     let registry_service = RegistryService::new(Registry::new());

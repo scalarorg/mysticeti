@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.24.0"
+version = "0.1.0"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [
@@ -79,6 +79,7 @@ tower-http = { version = "0.5", features = [
 ] }
 
 tracing = "0.1.37"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 x509-parser = { version = "0.17.0", features = ["verify"] }
 
 # anemo dependencies

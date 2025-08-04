@@ -108,7 +108,8 @@ async fn start_four_nodes(working_directory: PathBuf) -> Result<()> {
 
     // Start all 4 nodes
     let mut handles = Vec::new();
-    for i in 0..committee_size {
+    for (i, (network_keypair, protocol_keypair)) in keypairs.iter().enumerate().take(committee_size)
+    {
         let authority = AuthorityIndex::new_for_test(i as u32);
         let node_dir = working_directory.join(format!("node-{}", i));
         let db_path = node_dir.join("consensus.db");
@@ -117,7 +118,7 @@ async fn start_four_nodes(working_directory: PathBuf) -> Result<()> {
         fs::create_dir_all(&node_dir)?;
 
         // Get keypairs for this node
-        let (network_keypair, protocol_keypair) = &keypairs[i];
+        // let (network_keypair, protocol_keypair) = &keypairs[i];
 
         // Create parameters with correct db path
         let mut node_parameters = parameters.clone();

@@ -28,6 +28,11 @@ use crate::{
     ssh::{CommandContext, CommandStatus, SshConnectionManager},
 };
 
+mod local;
+mod remote;
+pub use local::LocalNetworkOrchestrator;
+pub use remote::RemoteNetworkOrchestrator;
+
 /// An orchestrator to run benchmarks on a testbed.
 pub struct Orchestrator<P, T> {
     /// The testbed's settings.
@@ -307,15 +312,12 @@ impl<P: ProtocolCommands<T> + ProtocolMetrics, T: BenchmarkType> Orchestrator<P,
             "echo \"source $HOME/.cargo/env\" | tee -a ~/.bashrc",
             "source $HOME/.cargo/env",
             "rustup default stable",
-
             // Install node exporter
             &format!("echo -e '{install_node_exporter}' > install_node_exporter.sh"),
             "chmod +x install_node_exporter.sh",
             "./install_node_exporter.sh",
-
             "sudo sysctl net.ipv4.tcp_rmem=\"8192 262144 536870912\"",
             "sudo sysctl net.ipv4.tcp_wmem=\"4096 16384 536870912\"",
-
             // Create the working directory.
             &format!("mkdir -p {working_dir}"),
             // Clone the repo.

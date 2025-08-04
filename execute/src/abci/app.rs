@@ -1,7 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use consensus_core;
 use std::sync::Arc;
 use tendermint_abci::Application;
 use tendermint_proto::v0_38::abci::{
@@ -14,17 +13,12 @@ use tracing::info;
 #[derive(Clone)]
 pub struct MysticetiAbciApp {
     transaction_sender: Arc<mpsc::Sender<Vec<u8>>>,
-    consensus_output_sender: Arc<mpsc::Sender<consensus_core::CommittedSubDag>>,
 }
 
 impl MysticetiAbciApp {
-    pub fn new(
-        transaction_sender: mpsc::Sender<Vec<u8>>,
-        consensus_output_sender: mpsc::Sender<consensus_core::CommittedSubDag>,
-    ) -> Self {
+    pub fn new(transaction_sender: mpsc::Sender<Vec<u8>>) -> Self {
         Self {
             transaction_sender: Arc::new(transaction_sender),
-            consensus_output_sender: Arc::new(consensus_output_sender),
         }
     }
 }
