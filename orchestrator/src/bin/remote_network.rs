@@ -1,19 +1,11 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use base64::Engine;
 use clap::Parser;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::Result;
 use orchestrator::RemoteNetworkOrchestrator;
-use reqwest::Client;
-use serde_json::json;
-use std::{
-    env,
-    path::PathBuf,
-    time::{Duration, Instant},
-};
-use tokio::time::sleep;
-use tracing::{info, warn};
+use std::env;
+use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -114,7 +106,6 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine;
     use std::path::PathBuf;
     use tokio::time::Duration;
 

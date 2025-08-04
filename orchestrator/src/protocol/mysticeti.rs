@@ -4,13 +4,12 @@
 use std::{
     env,
     fmt::{Debug, Display},
-    net::IpAddr,
     path::PathBuf,
     str::FromStr,
 };
 
 use consensus_config::{
-    self, AuthorityIndex, Parameters, DEFAULT_COMMITTEE_FILENAME, DEFAULT_PARAMETERS_FILENAME,
+    self, AuthorityIndex, DEFAULT_COMMITTEE_FILENAME, DEFAULT_PARAMETERS_FILENAME,
 };
 use serde::{Deserialize, Serialize};
 

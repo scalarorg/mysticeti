@@ -1,13 +1,18 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::Path;
 use std::{path::PathBuf, time::Duration};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use clap::Parser;
 use color_eyre::eyre::Result;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
+use tokio::signal;
 
 // Import the orchestrator modules
 use orchestrator::benchmark::{BenchmarkParameters, BenchmarkResult, NetworkType};
@@ -95,11 +100,16 @@ pub struct Opts {
 
 struct BenchmarkRunner {
     opts: Opts,
+    shutdown_signal: Arc<AtomicBool>,
 }
 
 impl BenchmarkRunner {
-    fn new(opts: Opts) -> Self {
-        Self { opts }
+    fn new(opts: Opts, shutdown_signal: Arc<AtomicBool>) -> Self {
+        Self { opts, shutdown_signal }
+    }
+
+    fn check_shutdown(&self) -> bool {
+        self.shutdown_signal.load(Ordering::Relaxed)
     }
 
     async fn run_benchmarks(&self) -> Result<()> {
@@ -155,6 +165,12 @@ impl BenchmarkRunner {
         let mut all_results = Vec::new();
 
         for (i, load) in loads.iter().enumerate() {
+            // Check for shutdown signal before starting each benchmark
+            if self.check_shutdown() {
+                warn!("Shutdown signal received, stopping benchmarks gracefully...");
+                break;
+            }
+
             info!(
                 "Running {} benchmark {}: {} tx/s",
                 self.opts.network_type,
@@ -164,6 +180,20 @@ impl BenchmarkRunner {
 
             let result = self.run_single_benchmark(*load).await?;
             all_results.push((*load, result.clone()));
+
+            // Check for shutdown signal before saving results
+            if self.check_shutdown() {
+                warn!("Shutdown signal received during benchmark, saving partial results...");
+                // Save the current result before shutdown
+                if self.opts.file_output {
+                    self.save_benchmark_result(i + 1, *load, &result, &output_dir)
+                        .await?;
+                }
+                if self.opts.console_output {
+                    self.print_benchmark_result(i + 1, *load, &result);
+                }
+                break;
+            }
 
             // Save results
             if self.opts.file_output {
@@ -249,17 +279,32 @@ impl BenchmarkRunner {
 
         // Wait for network to be ready
         info!("Waiting for network to be ready...");
+        let node_urls = Some(vec![]);
         orchestrator
-            .wait_for_network_ready(self.opts.startup_wait)
+            .wait_for_network_ready(self.opts.startup_wait, node_urls)
             .await?;
 
         // Check network status
-        let status = orchestrator.get_network_status()?;
-        info!("Network status: {:?}", status);
+        orchestrator.get_network_status()?;
+        info!("Network status: {:?}", ());
 
         // Run the benchmark by simulating transactions
         info!("Starting transaction simulation...");
         let start_time = std::time::Instant::now();
+
+        // Check for shutdown signal before simulation
+        if self.check_shutdown() {
+            warn!("Shutdown signal received, stopping benchmark early...");
+            // Cleanup before shutdown
+            if self.opts.cleanup_thorough {
+                info!("Performing thorough cleanup due to early shutdown...");
+                orchestrator.stop_network_thorough()?;
+            } else if self.opts.cleanup {
+                info!("Cleaning up due to early shutdown...");
+                orchestrator.stop_network()?;
+            }
+            return Err(color_eyre::eyre::eyre!("Benchmark interrupted by user"));
+        }
 
         // Calculate total transactions to send
         let total_transactions = load * self.opts.duration as usize;
@@ -401,15 +446,15 @@ impl BenchmarkRunner {
         let mut instances = Vec::new();
 
         for i in 0..self.opts.committee {
-            let _host = std::env::var(&format!("MYSTICETI_NODE{}_HOST", i))
+            let _host = std::env::var(format!("MYSTICETI_NODE{}_HOST", i))
                 .map_err(|_| color_eyre::eyre::eyre!("MYSTICETI_NODE{}_HOST not set", i))?;
 
-            let _ssh_port = std::env::var(&format!("MYSTICETI_NODE{}_SSH_PORT", i))
+            let _ssh_port = std::env::var(format!("MYSTICETI_NODE{}_SSH_PORT", i))
                 .unwrap_or_else(|_| "22".to_string())
                 .parse::<u16>()
                 .unwrap_or(22);
 
-            let _ssh_user = std::env::var(&format!("MYSTICETI_NODE{}_SSH_USER", i))
+            let _ssh_user = std::env::var(format!("MYSTICETI_NODE{}_SSH_USER", i))
                 .unwrap_or_else(|_| "ubuntu".to_string());
 
             let instance = Instance {
@@ -431,7 +476,7 @@ impl BenchmarkRunner {
         benchmark_num: usize,
         load: usize,
         result: &BenchmarkResult<MysticetiBenchmarkType>,
-        output_dir: &PathBuf,
+        output_dir: &Path,
     ) -> Result<()> {
         let filename = format!(
             "{}_benchmark_{}_{}txs.json",
@@ -484,9 +529,9 @@ impl BenchmarkRunner {
         println!("RESULTS:");
 
         if let Some(label) = result.measurements.labels().next() {
-            let throughput = result.measurements.aggregate_tps(&label);
-            let avg_latency = result.measurements.aggregate_average_latency(&label);
-            let latency_std_dev = result.measurements.aggregate_stdev_latency(&label);
+            let throughput = result.measurements.aggregate_tps(label);
+            let avg_latency = result.measurements.aggregate_average_latency(label);
+            let latency_std_dev = result.measurements.aggregate_stdev_latency(label);
 
             println!("  Throughput: {} tx/s", throughput);
             println!("  Average Latency: {:.2} ms", avg_latency.as_millis());
@@ -522,9 +567,9 @@ impl BenchmarkRunner {
 
         for (load, result) in results {
             if let Some(label) = result.measurements.labels().next() {
-                let throughput = result.measurements.aggregate_tps(&label);
-                let avg_latency = result.measurements.aggregate_average_latency(&label);
-                let latency_std_dev = result.measurements.aggregate_stdev_latency(&label);
+                let throughput = result.measurements.aggregate_tps(label);
+                let avg_latency = result.measurements.aggregate_average_latency(label);
+                let latency_std_dev = result.measurements.aggregate_stdev_latency(label);
 
                 let efficiency = if *load > 0 {
                     (throughput as f64 / *load as f64) * 100.0
@@ -550,6 +595,61 @@ impl BenchmarkRunner {
     }
 }
 
+/// Perform Docker cleanup on signal interruption
+async fn cleanup_docker_on_signal(opts: &Opts) {
+    if opts.network_type.to_lowercase() == "local" {
+        warn!("Performing Docker cleanup due to signal interruption...");
+        
+        // Try to create orchestrator and cleanup
+        if let Ok(orchestrator) = LocalNetworkOrchestrator::new(PathBuf::from(&opts.docker_compose_path)) {
+            if opts.cleanup_thorough {
+                info!("Performing thorough cleanup of Docker containers and volumes...");
+                if let Err(e) = orchestrator.stop_network_thorough() {
+                    warn!("Failed to perform thorough cleanup: {}", e);
+                }
+            } else if opts.cleanup {
+                info!("Cleaning up Docker containers...");
+                if let Err(e) = orchestrator.stop_network() {
+                    warn!("Failed to cleanup containers: {}", e);
+                }
+            } else {
+                // Even if cleanup is not explicitly requested, we should stop containers on signal
+                info!("Stopping Docker containers due to signal interruption...");
+                if let Err(e) = orchestrator.stop_network() {
+                    warn!("Failed to stop containers: {}", e);
+                }
+            }
+        } else {
+            warn!("Could not create orchestrator for cleanup");
+        }
+    }
+}
+
+/// Set up signal handlers for graceful shutdown
+async fn setup_signal_handler(shutdown_signal: Arc<AtomicBool>, opts: Opts) {
+    let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
+        .expect("Failed to register SIGTERM handler");
+    let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt())
+        .expect("Failed to register SIGINT handler");
+
+    loop {
+        tokio::select! {
+            _ = sigterm.recv() => {
+                warn!("Received SIGTERM, initiating graceful shutdown...");
+                shutdown_signal.store(true, Ordering::Relaxed);
+                cleanup_docker_on_signal(&opts).await;
+                break;
+            }
+            _ = sigint.recv() => {
+                warn!("Received SIGINT (Ctrl+C), initiating graceful shutdown...");
+                shutdown_signal.store(true, Ordering::Relaxed);
+                cleanup_docker_on_signal(&opts).await;
+                break;
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Nice colored error messages.
@@ -562,6 +662,9 @@ async fn main() -> Result<()> {
     fmt().with_env_filter(filter).init();
 
     let opts: Opts = Opts::parse();
+
+    // Create shutdown signal
+    let shutdown_signal = Arc::new(AtomicBool::new(false));
 
     println!("Comprehensive Benchmark Runner");
     println!("=============================");
@@ -580,6 +683,8 @@ async fn main() -> Result<()> {
     println!("  Docker compose path: {}", opts.docker_compose_path);
     println!("  Startup wait: {}s", opts.startup_wait);
     println!("  Cleanup: {}", opts.cleanup);
+    println!();
+    println!("Signal handling: Ctrl+C and SIGTERM will trigger graceful shutdown");
     println!();
 
     // Show usage examples
@@ -600,12 +705,41 @@ async fn main() -> Result<()> {
         println!();
     }
 
-    let runner = BenchmarkRunner::new(opts.clone());
-    runner.run_benchmarks().await?;
+    let runner = BenchmarkRunner::new(opts.clone(), shutdown_signal.clone());
 
-    println!("\nBenchmark completed successfully!");
+    // Set up signal handler task
+    let signal_handler = tokio::spawn(setup_signal_handler(shutdown_signal.clone(), opts.clone()));
+
+    // Run benchmarks
+    let benchmark_result = tokio::select! {
+        result = runner.run_benchmarks() => result,
+        _ = signal_handler => {
+            warn!("Signal handler terminated, shutting down...");
+            Err(color_eyre::eyre::eyre!("Benchmark interrupted by signal"))
+        }
+    };
+
+    // Handle the result
+    match benchmark_result {
+        Ok(_) => {
+            if shutdown_signal.load(Ordering::Relaxed) {
+                println!("\nBenchmark was interrupted but completed gracefully!");
+            } else {
+                println!("\nBenchmark completed successfully!");
+            }
+        }
+        Err(e) => {
+            if shutdown_signal.load(Ordering::Relaxed) {
+                println!("\nBenchmark was interrupted: {}", e);
+                println!("Partial results may have been saved.");
+            } else {
+                return Err(e);
+            }
+        }
+    }
+
     println!(
-        "Check the output directory for detailed results: {}",
+        "\nCheck the output directory for detailed results: {}",
         opts.output_dir
     );
     println!();

@@ -1,6 +1,8 @@
+use base64::Engine;
 use color_eyre::eyre::{Context, Result};
 use reqwest::Client;
 use serde_json::json;
+use shell_escape::escape;
 use std::{
     env,
     path::PathBuf,
@@ -8,7 +10,6 @@ use std::{
 };
 use tokio::time::sleep;
 use tracing::{info, warn};
-use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Debug, Clone)]
 pub struct RemoteNode {
@@ -23,21 +24,21 @@ pub struct RemoteNode {
 
 impl RemoteNode {
     fn from_env(index: u32) -> Result<Self> {
-        let host = env::var(&format!("MYSTICETI_NODE{}_HOST", index)).wrap_err(format!(
+        let host = env::var(format!("MYSTICETI_NODE{}_HOST", index)).wrap_err(format!(
             "MYSTICETI_NODE{}_HOST environment variable not set",
             index
         ))?;
 
-        let port = env::var(&format!("MYSTICETI_NODE{}_SSH_PORT", index))
+        let port = env::var(format!("MYSTICETI_NODE{}_SSH_PORT", index))
             .unwrap_or_else(|_| "22".to_string())
             .parse::<u16>()
             .wrap_err(format!("Invalid SSH port for node {}", index))?;
 
-        let ssh_user = env::var(&format!("MYSTICETI_NODE{}_SSH_USER", index))
+        let ssh_user = env::var(format!("MYSTICETI_NODE{}_SSH_USER", index))
             .unwrap_or_else(|_| "ubuntu".to_string());
 
         let ssh_key_path = PathBuf::from(
-            env::var(&format!("MYSTICETI_NODE{}_SSH_KEY", index))
+            env::var(format!("MYSTICETI_NODE{}_SSH_KEY", index))
                 .unwrap_or_else(|_| "~/.ssh/id_rsa".to_string()),
         );
 
@@ -56,14 +57,19 @@ impl RemoteNode {
     }
 
     fn ssh_command(&self, command: &str) -> String {
+        let safe_cmd = escape(command.into());
         format!(
-            "ssh -i {} -p {} {}@{} -o StrictHostKeyChecking=no -o ConnectTimeout={} '{}'",
+            "ssh -i {} -p {} {}@{} \
+                -o UserKnownHostsFile={} \
+                -o StrictHostKeyChecking=accept-new \
+                -o ConnectTimeout={} '{}'",
             self.ssh_key_path.display(),
             self.port,
             self.ssh_user,
             self.host,
-            env::var("SSH_TIMEOUT").unwrap_or_else(|_| "30".to_string()),
-            command
+            dirs::home_dir().unwrap().display(),
+            env::var("SSH_TIMEOUT").unwrap_or_else(|_| "30".into()),
+            safe_cmd,
         )
     }
 }
@@ -129,7 +135,20 @@ impl RemoteNetworkOrchestrator {
                 "sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
                 "sudo usermod -aG docker $USER",
             ];
+            // Check OS type first
+            let os_check = node.ssh_command("cat /etc/os-release | grep -E '^ID='");
+            let os_output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&os_check)
+                .output()
+                .wrap_err("Failed to check OS type")?;
 
+            let os_id = String::from_utf8_lossy(&os_output.stdout);
+            if !os_id.contains("ubuntu") && !os_id.contains("debian") {
+                return Err(color_eyre::eyre::eyre!(
+                    "Unsupported OS for automatic Docker installation. Please install Docker manually."
+                ));
+            }
             for cmd in install_commands {
                 let ssh_cmd = node.ssh_command(cmd);
                 let status = std::process::Command::new("sh")
@@ -308,7 +327,7 @@ impl RemoteNetworkOrchestrator {
             let url = format!("http://{}:{}/broadcast_tx_async", node.host, node.rpc_port);
 
             let payload = json!({
-                "transaction": base64::encode(&tx_data)
+                "transaction": base64::engine::general_purpose::STANDARD.encode(&tx_data)
             });
 
             match self.client.post(&url).json(&payload).send().await {

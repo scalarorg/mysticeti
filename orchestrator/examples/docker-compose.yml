@@ -50,7 +50,7 @@ services:
       "--rpc-port", "26657",
       "--abci-port", "26671",
       "--working-directory", "/app/data",
-      "--peer-addresses", "${PEER_ADDRESSES_NODE0:-172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657}"
+      "--peer-addresses", "${PEER_ADDRESSES_NODE1:-172.20.0.10:26657,172.20.0.12:26657,172.20.0.13:26657}"
     ]
     networks:
       mysticeti-network:
@@ -78,7 +78,7 @@ services:
       "--rpc-port", "26657",
       "--abci-port", "26672",
       "--working-directory", "/app/data",
-      "--peer-addresses", "${PEER_ADDRESSES_NODE0:-172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657}"
+      "--peer-addresses", "${PEER_ADDRESSES_NODE2:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.13:26657}"
     ]
     networks:
       mysticeti-network:
@@ -106,7 +106,7 @@ services:
       "--rpc-port", "26657",
       "--abci-port", "26673",
       "--working-directory", "/app/data",
-      "--peer-addresses", "${PEER_ADDRESSES_NODE0:-172.20.0.11:26657,172.20.0.12:26657,172.20.0.13:26657}"
+      "--peer-addresses", "${PEER_ADDRESSES_NODE3:-172.20.0.10:26657,172.20.0.11:26657,172.20.0.12:26657}"
     ]
     networks:
       mysticeti-network:

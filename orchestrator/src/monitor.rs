@@ -13,12 +13,12 @@ use crate::{
 };
 
 #[must_use]
-pub struct NodeMonitorHandle(mpsc::Sender<()>);
+pub struct NodeMonitorHandle();
 
 impl NodeMonitorHandle {
     pub fn new() -> (Self, mpsc::Receiver<()>) {
-        let (sender, receiver) = mpsc::channel(1);
-        (Self(sender), receiver)
+        let (_, receiver) = mpsc::channel(1);
+        (Self(), receiver)
     }
 }
 

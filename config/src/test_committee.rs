@@ -4,7 +4,7 @@
 use std::net::{TcpListener, TcpStream};
 
 use mysten_network::Multiaddr;
-use rand::{rngs::StdRng, SeedableRng as _};
+use rand::{SeedableRng as _, rngs::StdRng};
 
 use crate::{
     Authority, AuthorityKeyPair, Committee, Epoch, NetworkKeyPair, ProtocolKeyPair, Stake,
@@ -42,13 +42,21 @@ pub fn docker_committee_and_keys(
     epoch: Epoch,
     authorities_stake: Vec<Stake>,
 ) -> (Committee, Vec<(NetworkKeyPair, ProtocolKeyPair)>) {
+    // Ensure we don't exceed the available Docker IPs
+    if authorities_stake.len() > 4 {
+        panic!(
+            "Docker committee supports maximum 4 authorities, got {}",
+            authorities_stake.len()
+        );
+    }
+
     let mut authorities = vec![];
     let mut key_pairs = vec![];
     let mut rng = StdRng::from_seed([0; 32]);
 
     // Docker network IP addresses for the 4-node network
-    let docker_ips = vec!["172.20.0.10", "172.20.0.11", "172.20.0.12", "172.20.0.13"];
-    let network_ports = vec![26657, 26657, 26657, 26657]; // All nodes use port 26657 internally
+    let docker_ips = ["172.20.0.10", "172.20.0.11", "172.20.0.12", "172.20.0.13"];
+    let network_ports = [26657, 26657, 26657, 26657]; // All nodes use port 26657 internally
 
     for (i, stake) in authorities_stake.into_iter().enumerate() {
         let authority_keypair = AuthorityKeyPair::generate(&mut rng);

@@ -14,7 +14,7 @@ use prometheus_parse::Scrape;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    benchmark::{BenchmarkParameters, BenchmarkType},
+    benchmark::BenchmarkParameters,
     display,
     protocol::ProtocolMetrics,
     settings::Settings,
@@ -192,9 +192,9 @@ impl<T: crate::benchmark::BenchmarkType> MeasurementsCollection<T> {
     pub fn add(&mut self, scraper_id: ScraperId, label: String, measurement: Measurement) {
         self.data
             .entry(label)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(scraper_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(measurement);
     }
 

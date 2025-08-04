@@ -5,7 +5,64 @@
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 set -e
 
+# Global variables for cleanup
+BENCHMARK_PID=""
+CLEANUP_FLAG=""
+CLEANUP_THOROUGH_FLAG=""
+NETWORK_TYPE=""
+
+# Signal handler for graceful shutdown
+cleanup_and_exit() {
+    local signal_name="$1"
+    echo ""
+    echo "=== Received $signal_name signal ==="
+    echo "Initiating graceful shutdown..."
+    
+    # Kill the benchmark process if it's running
+    if [ -n "$BENCHMARK_PID" ] && kill -0 "$BENCHMARK_PID" 2>/dev/null; then
+        echo "Terminating benchmark process (PID: $BENCHMARK_PID)..."
+        kill -TERM "$BENCHMARK_PID" 2>/dev/null || true
+        
+        # Wait for the process to finish gracefully
+        local count=0
+        while kill -0 "$BENCHMARK_PID" 2>/dev/null && [ $count -lt 10 ]; do
+            sleep 1
+            count=$((count + 1))
+        done
+        
+        # Force kill if still running
+        if kill -0 "$BENCHMARK_PID" 2>/dev/null; then
+            echo "Force killing benchmark process..."
+            kill -KILL "$BENCHMARK_PID" 2>/dev/null || true
+        fi
+    fi
+    
+    # Perform cleanup for local networks on signal interruption
+    if [ "$NETWORK_TYPE" = "local" ]; then
+        if [ "$CLEANUP_THOROUGH_FLAG" = "--cleanup-thorough" ]; then
+            echo "Performing thorough cleanup of Docker containers and volumes..."
+            cd "$DIR/.." && docker-compose down -v --remove-orphans 2>/dev/null || true
+        elif [ "$CLEANUP_FLAG" = "--cleanup" ]; then
+            echo "Cleaning up Docker containers..."
+            cd "$DIR/.." && docker-compose down 2>/dev/null || true
+        else
+            # Even if cleanup is not explicitly requested, we should stop containers on signal
+            echo "Stopping Docker containers due to signal interruption..."
+            cd "$DIR/.." && docker-compose down 2>/dev/null || true
+        fi
+    fi
+    
+    echo "Cleanup completed. Exiting..."
+    exit 130  # Standard exit code for script terminated by Ctrl+C
+}
+
+# Set up signal traps
+trap 'cleanup_and_exit "SIGINT (Ctrl+C)"' INT
+trap 'cleanup_and_exit "SIGTERM"' TERM
+
 echo "=== Mysticeti Comprehensive Benchmark Runner ==="
+echo "Note: You can press Ctrl+C at any time to gracefully stop the benchmark"
+echo ""
 
 # Function to check if Docker is installed and running
 check_docker() {
@@ -56,7 +113,7 @@ check_docker
 
 # Function to check for docker-compose.yml file
 check_docker_compose_file() {
-    local compose_file="../docker-compose.yml"
+    local compose_file="$1"
     
     if [ ! -f "$compose_file" ]; then
         echo "Error: docker-compose.yml not found at $compose_file"
@@ -131,6 +188,7 @@ prompt_with_default "Committee size" "4" "COMMITTEE"
 prompt_with_default "Number of faulty nodes" "0" "FAULTS"
 prompt_yes_no "Crash recovery enabled" "n" "CRASH_RECOVERY"
 prompt_with_default "Crash interval (seconds)" "60" "CRASH_INTERVAL"
+prompt_with_default "Startup waint (seconds)" "60" "STARTUP_WAIT"
 prompt_with_default "Benchmark duration (seconds)" "180" "DURATION"
 prompt_with_default "Network loads (comma-separated)" "100,200,500" "NETWORK_LOADS"
 prompt_with_default "Network type (local or remote)" "local" "NETWORK_TYPE"
@@ -175,6 +233,9 @@ else
     CLEANUP_THOROUGH_FLAG=""
 fi
 
+# Store network type for cleanup handler
+NETWORK_TYPE="$NETWORK_TYPE"
+
 echo ""
 echo "Configuration Summary:"
 echo "====================="
@@ -185,6 +246,7 @@ echo "Committee size: $COMMITTEE"
 echo "Faults: $FAULTS"
 echo "Crash recovery: $CRASH_RECOVERY"
 echo "Crash interval: $CRASH_INTERVAL seconds"
+echo "Startup wait: $STARTUP_WAIT seconds"
 echo "Duration: $DURATION seconds"
 echo "Network loads: $NETWORK_LOADS"
 echo "Network type: $NETWORK_TYPE"
@@ -207,7 +269,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Check for docker-compose.yml if using local network
 if [ "$NETWORK_TYPE" = "local" ]; then
-    check_docker_compose_file
+    check_docker_compose_file "../docker-compose.yml"
 fi
 
 # Build the binary if needed
@@ -218,6 +280,8 @@ echo ""
 
 # Run the benchmark with all parameters
 echo "Starting comprehensive benchmark with specified parameters..."
+echo "Signal handling: You can press Ctrl+C to gracefully stop the benchmark"
+echo ""
 
 # Add network loads based on network type
 if [ "$NETWORK_TYPE" = "local" ]; then
@@ -229,12 +293,13 @@ if [ "$NETWORK_TYPE" = "local" ]; then
       --faults "$FAULTS" \
       $CRASH_RECOVERY_FLAG \
       --crash-interval "$CRASH_INTERVAL" \
+      --startup-wait  "$STARTUP_WAIT" \
       --duration "$DURATION" \
       --network-type "$NETWORK_TYPE" \
       --local-loads "$NETWORK_LOADS" \
       --transaction-size "$TRANSACTION_SIZE" \
       $CLEANUP_FLAG \
-      $CLEANUP_THOROUGH_FLAG
+      $CLEANUP_THOROUGH_FLAG &
 else
     cargo run --release --bin benchmark -- \
       --output-dir "$OUTPUT_DIR" \
@@ -244,15 +309,37 @@ else
       --faults "$FAULTS" \
       $CRASH_RECOVERY_FLAG \
       --crash-interval "$CRASH_INTERVAL" \
+      --startup-wait  "$STARTUP_WAIT" \
       --duration "$DURATION" \
       --network-type "$NETWORK_TYPE" \
       --remote-loads "$NETWORK_LOADS" \
       --transaction-size "$TRANSACTION_SIZE" \
       $CLEANUP_FLAG \
-      $CLEANUP_THOROUGH_FLAG
+      $CLEANUP_THOROUGH_FLAG &
 fi
 
-echo ""
-echo "=== Benchmark completed ==="
+# Store the benchmark process PID
+BENCHMARK_PID=$!
+echo "Benchmark process started with PID: $BENCHMARK_PID"
+
+# Wait for the benchmark to complete
+wait $BENCHMARK_PID
+BENCHMARK_EXIT_CODE=$?
+
+# Clear the PID since the process has finished
+BENCHMARK_PID=""
+
+# Check exit code
+if [ $BENCHMARK_EXIT_CODE -eq 0 ]; then
+    echo ""
+    echo "=== Benchmark completed successfully ==="
+elif [ $BENCHMARK_EXIT_CODE -eq 130 ]; then
+    echo ""
+    echo "=== Benchmark was interrupted but completed gracefully ==="
+else
+    echo ""
+    echo "=== Benchmark exited with code: $BENCHMARK_EXIT_CODE ==="
+fi
+
 echo "Results saved to: $OUTPUT_DIR"
 echo "Check the output directory for detailed benchmark results and summaries." 

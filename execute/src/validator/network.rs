@@ -13,17 +13,13 @@ use crate::validator::node::ValidatorNode;
 pub struct ValidatorNetwork {
     working_directory: PathBuf,
     nodes: Vec<ValidatorNode>,
-    registry_service: RegistryService,
 }
 
 impl ValidatorNetwork {
     pub fn new(working_directory: PathBuf) -> Self {
-        let registry_service = RegistryService::new(Registry::new());
-
         Self {
             working_directory,
             nodes: Vec::new(),
-            registry_service,
         }
     }
 
@@ -41,15 +37,14 @@ impl ValidatorNetwork {
         let (committee, keypairs) = local_committee_and_keys(0, vec![1; committee_size]);
 
         // Define RPC ports for each node
-        let rpc_ports = vec![26657, 26658, 26659, 26660];
+        let rpc_ports = [26657, 26658, 26659, 26660];
 
         // Start all 4 validator nodes
-        for i in 0..committee_size {
+        for (i, rpc_port) in rpc_ports.iter().enumerate().take(committee_size) {
             let authority_index = i as u32;
-            let rpc_port = rpc_ports[i];
 
             let mut node =
-                ValidatorNode::new(authority_index, self.working_directory.clone(), rpc_port);
+                ValidatorNode::new(authority_index, self.working_directory.clone(), *rpc_port);
 
             // Create a unique registry for each node to avoid conflicts
             let node_registry_service = RegistryService::new(Registry::new());
@@ -87,7 +82,7 @@ impl ValidatorNetwork {
     }
 
     pub fn get_rpc_endpoints(&self) -> Vec<String> {
-        let rpc_ports = vec![26657, 26658, 26659, 26660];
+        let rpc_ports = [26657, 26658, 26659, 26660];
         rpc_ports
             .iter()
             .map(|port| format!("http://127.0.0.1:{}", port))

@@ -208,15 +208,15 @@ impl ChannelCoreThreadDispatcher {
         // Initialize highest received rounds.
         let highest_received_rounds = {
             let dag_state = dag_state.read();
-            let highest_received_rounds = context
+            
+
+            context
                 .committee
                 .authorities()
                 .map(|(index, _)| {
                     AtomicU32::new(dag_state.get_last_block_for_authority(index).round())
                 })
-                .collect();
-
-            highest_received_rounds
+                .collect()
         };
 
         let (sender, receiver) =

@@ -1,9 +1,8 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use base64::Engine;
 use clap::Parser;
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::Result;
 use orchestrator::LocalNetworkOrchestrator;
 
 use std::path::PathBuf;
@@ -67,8 +66,14 @@ async fn main() -> Result<()> {
     orchestrator.start_network()?;
 
     // Wait for network to be ready
+    let node_urls = Some(vec![
+        "http://localhost:26657".to_string(),
+        "http://localhost:26658".to_string(),
+        "http://localhost:26659".to_string(),
+        "http://localhost:26660".to_string(),
+    ]);
     orchestrator
-        .wait_for_network_ready(args.startup_wait)
+        .wait_for_network_ready(args.startup_wait, node_urls)
         .await?;
 
     // Simulate transactions

@@ -4,7 +4,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use consensus_config::{AuthorityIndex, NetworkKeyPair, Parameters, ProtocolKeyPair};
@@ -14,9 +13,6 @@ use consensus_core::{
 };
 use mysten_metrics::RegistryService;
 use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
-
-use crate::abci::app::MysticetiAbciApp;
-
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
 
@@ -39,14 +35,10 @@ pub struct ValidatorNode {
     rpc_port: u16,
     abci_port: u16,
     consensus_authority: Option<ConsensusAuthority>,
-    transaction_sender: mpsc::Sender<Vec<u8>>,
-    consensus_output_sender: mpsc::Sender<consensus_core::CommittedSubDag>,
 }
 
 impl ValidatorNode {
     pub fn new(authority_index: u32, working_directory: PathBuf, rpc_port: u16) -> Self {
-        let (transaction_sender, _transaction_receiver) = mpsc::channel(1000);
-        let (consensus_output_sender, _consensus_output_receiver) = mpsc::channel(1000);
         let abci_port = 26670 + authority_index as u16;
         Self {
             authority_index: AuthorityIndex::new_for_test(authority_index),
@@ -54,8 +46,6 @@ impl ValidatorNode {
             rpc_port,
             abci_port,
             consensus_authority: None,
-            transaction_sender,
-            consensus_output_sender,
         }
     }
 
@@ -78,11 +68,13 @@ impl ValidatorNode {
         let db_path = node_dir.join("consensus.db");
 
         // Get keypairs for this node
-        let (network_keypair, protocol_keypair) = &keypairs[self.authority_index.value() as usize];
+        let (network_keypair, protocol_keypair) = &keypairs[self.authority_index.value()];
 
         // Create parameters
-        let mut parameters = Parameters::default();
-        parameters.db_path = db_path;
+        let parameters = Parameters {
+            db_path,
+            ..Default::default()
+        };
 
         // Create commit consumer
         let (commit_consumer, commit_receiver, block_receiver) = CommitConsumer::new(0);
@@ -120,50 +112,6 @@ impl ValidatorNode {
             "Validator node {} started successfully",
             self.authority_index
         );
-        Ok(())
-    }
-
-    async fn start_abci_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let abci_addr = format!("127.0.0.1:{}", self.abci_port);
-        let _transaction_sender = self.transaction_sender.clone();
-        let consensus_output_sender = self.consensus_output_sender.clone();
-
-        // Create a channel for transactions from ABCI to Mysticeti consensus
-        let (abci_tx_sender, mut abci_tx_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1000);
-        let consensus_authority = self.consensus_authority.as_ref().unwrap().clone();
-        let transaction_client = consensus_authority.transaction_client();
-        let transaction_client = transaction_client.clone();
-
-        // Process transactions from ABCI and submit to Mysticeti consensus
-        tokio::spawn(async move {
-            while let Some(tx_data) = abci_tx_receiver.recv().await {
-                info!(
-                    "Submitting transaction from ABCI to Mysticeti consensus: {} bytes",
-                    tx_data.len()
-                );
-
-                // Submit transaction to Mysticeti consensus authority using the transaction client
-                match transaction_client.submit(vec![tx_data]).await {
-                    Ok((block_ref, _status_receiver)) => {
-                        info!(
-                            "Transaction submitted successfully to Mysticeti consensus, included in block: {:?}",
-                            block_ref
-                        );
-                    }
-                    Err(e) => {
-                        error!("Failed to submit transaction to Mysticeti consensus: {}", e);
-                    }
-                }
-            }
-        });
-
-        let app = MysticetiAbciApp::new(abci_tx_sender, consensus_output_sender);
-        std::thread::spawn(move || {
-            let server = tendermint_abci::ServerBuilder::default()
-                .bind(abci_addr, app)
-                .expect("Failed to bind ABCI server");
-            server.listen().expect("ABCI server failed");
-        });
         Ok(())
     }
 
@@ -229,10 +177,7 @@ impl ValidatorNode {
             }
 
             #[derive(Deserialize)]
-            struct AbciQueryRequest {
-                path: Option<String>,
-                data: Option<String>,
-            }
+            struct AbciQueryRequest {}
 
             #[derive(Serialize)]
             struct AbciQueryResponse {
@@ -325,8 +270,6 @@ impl ValidatorNode {
             consensus_core::CertifiedBlocksOutput,
         >,
     ) {
-        let consensus_output_sender = self.consensus_output_sender.clone();
-
         // Process committed sub-dags from Mysticeti consensus
         tokio::spawn(async move {
             while let Some(committed_subdag) = commit_receiver.recv().await {
@@ -334,11 +277,6 @@ impl ValidatorNode {
                     "Received committed sub-dag from Mysticeti: {} blocks",
                     committed_subdag.blocks.len()
                 );
-
-                // Todo: Forward consensus output to ABCI app
-                // if let Err(e) = consensus_output_sender.send(committed_subdag).await {
-                //     error!("Failed to forward consensus output to ABCI: {}", e);
-                // }
             }
         });
 

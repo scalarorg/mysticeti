@@ -1,3 +1,4 @@
 target
 data
 benchmarks
+.env*

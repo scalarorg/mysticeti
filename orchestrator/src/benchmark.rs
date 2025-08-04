@@ -861,7 +861,7 @@ pub mod test {
     fn benchmark_result_creation() {
         let settings = Settings::new_for_test();
         let parameters = BenchmarkParameters::new(
-            TestBenchmarkType::default(),
+            TestBenchmarkType,
             4,
             FaultsType::Permanent { faults: 0 },
             100,

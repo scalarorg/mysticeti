@@ -9,7 +9,6 @@ use std::{
 };
 use tokio::time::sleep;
 use tracing::{info, warn};
-use tracing_subscriber::{EnvFilter, fmt};
 
 pub struct LocalNetworkOrchestrator {
     docker_compose_path: PathBuf,
@@ -49,7 +48,7 @@ impl LocalNetworkOrchestrator {
 
         let status = Command::new("docker")
             .current_dir(orchestrator_dir)
-            .args(&["compose", "up", "-d"])
+            .args(["compose", "up", "-d"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
@@ -77,7 +76,7 @@ impl LocalNetworkOrchestrator {
 
         let status = Command::new("docker")
             .current_dir(orchestrator_dir)
-            .args(&["compose", "down"])
+            .args(["compose", "down"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
@@ -105,7 +104,7 @@ impl LocalNetworkOrchestrator {
         // Stop and remove containers with volumes
         let status = Command::new("docker")
             .current_dir(orchestrator_dir)
-            .args(&["compose", "down", "-v"])
+            .args(["compose", "down", "-v"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
@@ -117,26 +116,36 @@ impl LocalNetworkOrchestrator {
             info!("Mysticeti network stopped and volumes removed successfully");
         }
 
-        // Remove any orphaned containers
+        // Remove only containers with specific label or name pattern
         let status_orphans = Command::new("docker")
-            .args(&["container", "prune", "-f"])
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .wrap_err("Failed to prune orphaned containers")?;
+            .args(&[
+                "container",
+                "ls",
+                "-aq",
+                "--filter",
+                "label=com.docker.compose.project=mysticeti",
+            ])
+            .output()
+            .wrap_err("Failed to list project containers")?;
 
-        if !status_orphans.success() {
+        if status_orphans.status.success() {
+            let container_ids = String::from_utf8_lossy(&status_orphans.stdout);
+            for id in container_ids.lines() {
+                Command::new("docker")
+                    .args(&["container", "rm", "-f", id])
+                    .status()
+                    .wrap_err("Failed to remove container")?;
+            }
+        } else {
             warn!(
                 "Docker container prune failed with status: {}",
-                status_orphans
+                status_orphans.status
             );
-        } else {
-            info!("Orphaned containers cleaned up");
         }
 
         // Remove any orphaned volumes
         let status_volumes = Command::new("docker")
-            .args(&["volume", "prune", "-f"])
+            .args(["volume", "prune", "-f"])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()
@@ -151,22 +160,28 @@ impl LocalNetworkOrchestrator {
         Ok(())
     }
 
-    pub async fn wait_for_network_ready(&self, wait_time: u64) -> Result<()> {
+    pub async fn wait_for_network_ready(
+        &self,
+        wait_time: u64,
+        node_urls: Option<Vec<String>>,
+    ) -> Result<()> {
         info!("Waiting {} seconds for network to be ready...", wait_time);
         sleep(Duration::from_secs(wait_time)).await;
 
         // Check if nodes are responding
         let client = Client::new();
-        let node_urls = vec![
-            "http://localhost:26657",
-            "http://localhost:26658",
-            "http://localhost:26659",
-            "http://localhost:26660",
-        ];
+        let node_urls = node_urls.unwrap_or_else(|| {
+            vec![
+                "http://localhost:26657".to_string(),
+                "http://localhost:26658".to_string(),
+                "http://localhost:26659".to_string(),
+                "http://localhost:26660".to_string(),
+            ]
+        });
 
         let mut all_nodes_ready = true;
         for (i, url) in node_urls.iter().enumerate() {
-            match client.get(&format!("{}/health", url)).send().await {
+            match client.get(format!("{}/health", url)).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
                         info!("Node {} is ready at {}", i, url);
@@ -193,7 +208,7 @@ impl LocalNetworkOrchestrator {
     /// Get container logs for debugging
     pub fn get_container_logs(&self, container_name: &str) -> Result<String> {
         let output = Command::new("docker")
-            .args(&["logs", container_name])
+            .args(["logs", container_name])
             .output()
             .wrap_err(format!(
                 "Failed to get logs for container {}",
@@ -214,7 +229,7 @@ impl LocalNetworkOrchestrator {
     /// Check if a container is running
     pub fn is_container_running(&self, container_name: &str) -> Result<bool> {
         let output = Command::new("docker")
-            .args(&[
+            .args([
                 "ps",
                 "--filter",
                 &format!("name={}", container_name),

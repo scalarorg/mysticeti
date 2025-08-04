@@ -9,7 +9,7 @@ use std::{
 };
 
 use reqwest::Url;
-use serde::{de::Error, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::Error};
 
 use crate::{
     client::Instance,
@@ -123,7 +123,6 @@ impl Settings {
             .path_segments()
             .expect("Url should already be checked when loading settings")
             .collect::<Vec<_>>()[1]
-            .to_string()
             .split('.')
             .next()
             .unwrap()

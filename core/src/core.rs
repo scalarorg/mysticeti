@@ -1051,7 +1051,9 @@ impl Core {
             to_commit.iter().map(|c| c.leader().to_string()).join(",")
         );
 
-        let sequenced_leaders = to_commit
+        
+
+        to_commit
             .into_iter()
             .map(|commit| {
                 let leader = commit.blocks().last().expect("Certified commit should have at least one block");
@@ -1060,9 +1062,7 @@ impl Core {
                 UniversalCommitter::update_metrics(&self.context, &leader, Decision::Certified);
                 (leader, commit)
             })
-            .collect::<Vec<_>>();
-
-        sequenced_leaders
+            .collect::<Vec<_>>()
     }
 
     /// Retrieves the next ancestors to propose to form a block at `clock_round` round.

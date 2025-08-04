@@ -79,10 +79,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --committee)
             COMMITTEE="$2"
+            if ! [[ "$COMMITTEE" =~ ^[0-9]+$ ]] || [ "$COMMITTEE" -lt 1 ]; then
+                echo "Error: --committee must be a positive integer, got '$COMMITTEE'"
+                exit 1
+            fi
             shift 2
             ;;
         --faults)
             FAULTS="$2"
+            if ! [[ "$FAULTS" =~ ^[0-9]+$ ]]; then
+                echo "Error: --faults must be a non-negative integer, got '$FAULTS'"
+                exit 1
+            fi
             shift 2
             ;;
         --crash-recovery)
@@ -107,10 +115,15 @@ while [[ $# -gt 0 ]]; do
             ;;
         --network-type)
             NETWORK_TYPE="$2"
+            if [[ "$NETWORK_TYPE" != "local" && "$NETWORK_TYPE" != "remote" ]]; then
+                echo "Error: --network-type must be 'local' or 'remote', got '$NETWORK_TYPE'"
+                exit 1
+            fi
             shift 2
             ;;
         --transaction-size)
             TRANSACTION_SIZE="$2"
+            
             shift 2
             ;;
         --help)

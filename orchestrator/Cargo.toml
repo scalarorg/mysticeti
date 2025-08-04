@@ -35,6 +35,8 @@ chrono = { version = "0.4", features = ["serde"] }
 
 consensus-core = { workspace = true }
 consensus-config = { workspace = true }
+dirs = "6.0.0"
+shell-escape = "0.1.5"
 
 [dev-dependencies]
 tempfile = { workspace = true }
