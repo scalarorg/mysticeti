@@ -1,6 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use consensus_types::block::{BlockRef, TransactionIndex};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,11 +9,11 @@ use tracing::{error, info};
 
 use consensus_config::{AuthorityIndex, NetworkKeyPair, Parameters, ProtocolKeyPair};
 use consensus_core::{
-    Clock, CommitConsumer, ConsensusAuthority, TransactionIndex, TransactionVerifier,
+    Clock, CommitConsumerArgs, ConsensusAuthority, NetworkType, TransactionVerifier,
     ValidationError,
 };
 use mysten_metrics::RegistryService;
-use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
+use sui_protocol_config::ProtocolConfig;
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
 
@@ -23,6 +24,7 @@ impl TransactionVerifier for SimpleTransactionVerifier {
 
     fn verify_and_vote_batch(
         &self,
+        _block_ref: &BlockRef,
         _batch: &[&[u8]],
     ) -> Result<Vec<TransactionIndex>, ValidationError> {
         Ok(vec![])
@@ -77,11 +79,12 @@ impl ValidatorNode {
         };
 
         // Create commit consumer
-        let (commit_consumer, commit_receiver, block_receiver) = CommitConsumer::new(0);
+        let (commit_consumer, commit_receiver, block_receiver) = CommitConsumerArgs::new(0, 0);
 
         // Start the consensus authority
         let consensus_authority = ConsensusAuthority::start(
-            ConsensusNetwork::Anemo,
+            NetworkType::Tonic,
+            0, // epoch_start_timestamp_ms
             self.authority_index,
             committee,
             parameters,
@@ -136,7 +139,7 @@ impl ValidatorNode {
                 // Forward to Mysticeti consensus
                 // Submit transaction to Mysticeti consensus authority using the transaction client
                 match transaction_client.submit(vec![tx_data]).await {
-                    Ok((block_ref, _status_receiver)) => {
+                    Ok((block_ref, _transaction_indices, _status_receiver)) => {
                         info!(
                             "Transaction submitted successfully to Mysticeti consensus, included in block: {:?}",
                             block_ref

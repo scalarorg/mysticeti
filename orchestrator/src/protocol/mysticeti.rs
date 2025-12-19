@@ -8,9 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use consensus_config::{
-    self, AuthorityIndex, DEFAULT_COMMITTEE_FILENAME, DEFAULT_PARAMETERS_FILENAME,
-};
+use consensus_config::{self, AuthorityIndex};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,7 +17,10 @@ use crate::{
     settings::Settings,
 };
 
-use super::{config::PrivateConfig, ProtocolCommands, ProtocolMetrics};
+use super::{ProtocolCommands, ProtocolMetrics, config::PrivateConfig};
+
+pub const DEFAULT_COMMITTEE_FILENAME: &str = "committee.yaml";
+pub const DEFAULT_PARAMETERS_FILENAME: &str = "parameters.yaml";
 
 const CARGO_FLAGS: &str = "--release";
 const RUST_FLAGS: &str = "RUSTFLAGS=-C\\ target-cpu=native";

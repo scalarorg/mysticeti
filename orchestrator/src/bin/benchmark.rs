@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::{path::PathBuf, time::Duration};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use color_eyre::eyre::Result;
+use tokio::signal;
 use tracing::{info, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, fmt};
-use tokio::signal;
 
 // Import the orchestrator modules
 use orchestrator::benchmark::{BenchmarkParameters, BenchmarkResult, NetworkType};
@@ -105,7 +104,10 @@ struct BenchmarkRunner {
 
 impl BenchmarkRunner {
     fn new(opts: Opts, shutdown_signal: Arc<AtomicBool>) -> Self {
-        Self { opts, shutdown_signal }
+        Self {
+            opts,
+            shutdown_signal,
+        }
     }
 
     fn check_shutdown(&self) -> bool {
@@ -599,9 +601,11 @@ impl BenchmarkRunner {
 async fn cleanup_docker_on_signal(opts: &Opts) {
     if opts.network_type.to_lowercase() == "local" {
         warn!("Performing Docker cleanup due to signal interruption...");
-        
+
         // Try to create orchestrator and cleanup
-        if let Ok(orchestrator) = LocalNetworkOrchestrator::new(PathBuf::from(&opts.docker_compose_path)) {
+        if let Ok(orchestrator) =
+            LocalNetworkOrchestrator::new(PathBuf::from(&opts.docker_compose_path))
+        {
             if opts.cleanup_thorough {
                 info!("Performing thorough cleanup of Docker containers and volumes...");
                 if let Err(e) = orchestrator.stop_network_thorough() {
