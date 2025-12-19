@@ -4,6 +4,7 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
 use clap::{Parser, command};
+use consensus_types::block::{BlockRef, TransactionIndex};
 use eyre::{Context, Result};
 use futures::future;
 use tracing_subscriber::filter::LevelFilter;
@@ -11,12 +12,12 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use consensus_config::{AuthorityIndex, Parameters, local_committee_and_keys};
 use consensus_core::{
-    Clock, CommitConsumer, ConsensusAuthority, TransactionIndex, TransactionVerifier,
+    Clock, CommitConsumerArgs, ConsensusAuthority, NetworkType, TransactionVerifier,
     ValidationError,
 };
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
-use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
+use sui_protocol_config::ProtocolConfig;
 
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
@@ -28,6 +29,7 @@ impl TransactionVerifier for SimpleTransactionVerifier {
 
     fn verify_and_vote_batch(
         &self,
+        _block_ref: &BlockRef,
         _batch: &[&[u8]],
     ) -> Result<Vec<TransactionIndex>, ValidationError> {
         Ok(vec![])
@@ -125,11 +127,12 @@ async fn start_four_nodes(working_directory: PathBuf) -> Result<()> {
         node_parameters.db_path = db_path;
 
         // Create commit consumer
-        let (commit_consumer, _commit_receiver, _block_receiver) = CommitConsumer::new(0);
+        let (commit_consumer, _commit_receiver, _block_receiver) = CommitConsumerArgs::new(0, 0);
 
         // Start the authority node
         let authority_node = ConsensusAuthority::start(
-            ConsensusNetwork::Anemo,
+            NetworkType::Tonic,
+            0, // epoch_start_timestamp_ms
             authority,
             committee.clone(),
             node_parameters,
@@ -196,14 +199,15 @@ async fn start_single_node(authority_index: u32, working_directory: PathBuf) -> 
     node_parameters.db_path = db_path;
 
     // Create commit consumer
-    let (commit_consumer, _commit_receiver, _block_receiver) = CommitConsumer::new(0);
+    let (commit_consumer, _commit_receiver, _block_receiver) = CommitConsumerArgs::new(0, 0);
 
     // Create registry service for metrics
     let registry_service = RegistryService::new(Registry::new());
 
     // Start the authority node
     let authority_node = ConsensusAuthority::start(
-        ConsensusNetwork::Anemo,
+        NetworkType::Tonic,
+        0, // epoch_start_timestamp_ms
         AuthorityIndex::new_for_test(authority_index),
         committee,
         node_parameters,

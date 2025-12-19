@@ -24,6 +24,8 @@ futures = { workspace = true }
 tracing = { workspace = true }
 consensus-core = { workspace = true }
 consensus-config = { workspace = true }
+consensus-types = { workspace = true }
+
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 
 clap = { version = "4.3.3", features = ["derive"] }
@@ -41,7 +43,8 @@ serde_json = "1.0"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
 fastcrypto = { workspace = true }
-
+# Fastevm
+rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", package = "rpc-shared-api" }
 # Tendermint integration
 tendermint-abci = { version = "0.40", default-features = false, features = ["kvstore-app", "binary"] }
 tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }

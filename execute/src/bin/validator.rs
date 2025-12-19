@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
             "Using Docker network configuration with peer addresses: {:?}",
             args.peer_addresses
         );
-        consensus_config::docker_committee_and_keys(0, vec![1; committee_size])
+        consensus_config::local_committee_and_keys(0, vec![1; committee_size])
     } else {
         info!("Using local network configuration");
         consensus_config::local_committee_and_keys(0, vec![1; committee_size])
