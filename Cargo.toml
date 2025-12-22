@@ -105,6 +105,3 @@ fastcrypto-zkp = { git = "https://github.com/MystenLabs/fastcrypto", rev = "69d4
 consensus-core = { git = "https://github.com/MystenLabs/sui", rev = "74e8414a498601333fa4dd408c892f5fe3b0ca93", package = "consensus-core"}
 consensus-config = { git = "https://github.com/MystenLabs/sui", rev = "74e8414a498601333fa4dd408c892f5fe3b0ca93", package = "consensus-config"}
 consensus-types = { git = "https://github.com/MystenLabs/sui", rev = "74e8414a498601333fa4dd408c892f5fe3b0ca93", package = "consensus-types"}
-
-# consensus-config = { path = "config" }
-# consensus-core = { path = "core" }
