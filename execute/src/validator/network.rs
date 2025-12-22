@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::PathBuf;
+use tokio::sync::mpsc;
 use tracing::info;
 
-use consensus_config::local_committee_and_keys;
+use consensus_config::{Parameters, local_committee_and_keys};
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
 
@@ -42,16 +43,24 @@ impl ValidatorNetwork {
         // Start all 4 validator nodes
         for (i, rpc_port) in rpc_ports.iter().enumerate().take(committee_size) {
             let authority_index = i as u32;
-
-            let mut node =
-                ValidatorNode::new(authority_index, self.working_directory.clone(), *rpc_port);
+            let parameters = Parameters::default();
+            let mut node = ValidatorNode::new(authority_index, self.working_directory.clone());
 
             // Create a unique registry for each node to avoid conflicts
             let node_registry_service = RegistryService::new(Registry::new());
 
+            // Create a channel to receive transactions
+            let (tx_sender, rx_transactions) = mpsc::unbounded_channel();
+
             // Start the node
-            node.start(committee.clone(), keypairs.clone(), node_registry_service)
-                .await?;
+            node.start(
+                committee.clone(),
+                parameters,
+                keypairs.clone(),
+                node_registry_service,
+                rx_transactions,
+            )
+            .await?;
 
             self.nodes.push(node);
 

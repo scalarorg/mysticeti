@@ -1,21 +1,25 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use consensus_types::block::{BlockRef, TransactionIndex};
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tracing::{error, info};
-
-use consensus_config::{AuthorityIndex, NetworkKeyPair, Parameters, ProtocolKeyPair};
+use consensus_config::{AuthorityIndex, Committee, NetworkKeyPair, Parameters, ProtocolKeyPair};
 use consensus_core::{
     Clock, CommitConsumerArgs, ConsensusAuthority, NetworkType, TransactionVerifier,
     ValidationError,
 };
+use consensus_types::block::{BlockRef, TransactionIndex};
 use mysten_metrics::RegistryService;
-use sui_protocol_config::ProtocolConfig;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::{net::SocketAddr, time::Duration};
+use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info};
+const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 1 second even if not full
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
+
+type RawTransaction = Vec<u8>;
+type RawTransactions = Vec<RawTransaction>;
 
 impl TransactionVerifier for SimpleTransactionVerifier {
     fn verify_batch(&self, _batch: &[&[u8]]) -> Result<(), ValidationError> {
@@ -34,33 +38,30 @@ impl TransactionVerifier for SimpleTransactionVerifier {
 pub struct ValidatorNode {
     authority_index: AuthorityIndex,
     working_directory: PathBuf,
-    rpc_port: u16,
-    abci_port: u16,
     consensus_authority: Option<ConsensusAuthority>,
+    protocol_config: ProtocolConfig,
 }
 
 impl ValidatorNode {
-    pub fn new(authority_index: u32, working_directory: PathBuf, rpc_port: u16) -> Self {
-        let abci_port = 26670 + authority_index as u16;
+    pub fn new(authority_index: u32, working_directory: PathBuf) -> Self {
+        let protocol_config = ProtocolConfig::get_for_max_version_UNSAFE();
         Self {
             authority_index: AuthorityIndex::new_for_test(authority_index),
             working_directory,
-            rpc_port,
-            abci_port,
             consensus_authority: None,
+            protocol_config,
         }
     }
 
     pub async fn start(
         &mut self,
-        committee: consensus_config::Committee,
+        committee: Committee,
+        parameters: Parameters,
         keypairs: Vec<(NetworkKeyPair, ProtocolKeyPair)>,
         registry_service: RegistryService,
+        rx_transactions: mpsc::UnboundedReceiver<RawTransactions>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!(
-            "Starting validator node {} on RPC port {} and ABCI port {}",
-            self.authority_index, self.rpc_port, self.abci_port
-        );
+        info!("Starting validator node {}", self.authority_index);
 
         // Create node directory
         let node_dir = self
@@ -75,9 +76,10 @@ impl ValidatorNode {
         // Create parameters
         let parameters = Parameters {
             db_path,
-            ..Default::default()
+            ..parameters
         };
-
+        // Log the loaded parameters for debugging
+        info!("Loaded consensus parameters: {:?}", parameters);
         // Create commit consumer
         let (commit_consumer, commit_receiver, block_receiver) = CommitConsumerArgs::new(0, 0);
 
@@ -102,14 +104,13 @@ impl ValidatorNode {
         self.consensus_authority = Some(consensus_authority);
 
         // Start transaction processing and consensus output handling
-        self.start_transaction_processing(commit_receiver, block_receiver)
-            .await;
+        self.start_transaction_processing(rx_transactions).await;
 
         // Start ABCI server with consensus output sender
-        //self.start_abci_server().await?;
+        // self.start_abci_server().await?;
 
         // Start RPC server
-        self.start_rpc_server().await?;
+        // self.start_rpc_server(self.protocol_config.rpc_port).await?;
 
         info!(
             "Validator node {} started successfully",
@@ -118,8 +119,88 @@ impl ValidatorNode {
         Ok(())
     }
 
-    async fn start_rpc_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting RPC server on port {}", self.rpc_port);
+    async fn start_transaction_processing(
+        &self,
+        mut rx_transactions: mpsc::UnboundedReceiver<RawTransactions>,
+    ) {
+        // Process received payload from execution client
+        let transaction_client = self
+            .consensus_authority
+            .as_ref()
+            .unwrap()
+            .transaction_client();
+        let max_transactions_in_block_count =
+            self.protocol_config.max_num_transactions_in_block() as usize;
+        tokio::spawn(async move {
+            // Transaction buffer for batching
+            let mut buffer = Vec::new();
+
+            // Create a periodic timer for batch timeout
+            let mut batch_timer = tokio::time::interval(Duration::from_millis(BATCH_TIMEOUT_MS));
+            let mut total_received_txs = 0_u64;
+            let mut total_send_txs = 0_u64;
+            loop {
+                tokio::select! {
+                    // Handle new transaction events
+                    Some(raw_tx) = rx_transactions.recv() => {
+                        total_received_txs += raw_tx.len() as u64;
+                        // because of this push, buffer has at least 1 transaction
+                        for tx in raw_tx {
+                            buffer.push(tx);
+                        }
+                        // Send batch if threshold is reached
+                        if buffer.len() >= max_transactions_in_block_count {
+                            // Split buffer to send only max_transactions_in_block_count transactions
+                            let batch: Vec<Vec<u8>> = buffer.drain(0..max_transactions_in_block_count).collect();
+                            let batch_size = batch.len();
+                            total_send_txs += batch_size as u64;
+                            if let Ok((block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
+                                debug!("[Threshold] Sending batch of {} transactions to mysticeti. Total sent/received transactions: {}/{}", batch_size, total_send_txs, total_received_txs);
+                            } else {
+                                error!("[Threshold] Failed to submit batch of {} transactions", batch_size);
+                            }
+                            batch_timer.reset();
+                        }
+                    }
+                    // Handle batch timeout
+                    _ = batch_timer.tick() => {
+                        if !buffer.is_empty() {
+                            let batch = std::mem::take(&mut buffer);
+                            let batch_size = batch.len();
+                            total_send_txs += batch_size as u64;
+                            if let Ok((block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
+                                info!("[Timer] Sending batch of {} transactions to mysticeti. Total sent/received transactions: {}/{}", batch_size, total_send_txs, total_received_txs);
+                            } else {
+                                error!("[Timer] Failed to submit batch of {} transactions", batch_size);
+                            }
+                        }
+                        batch_timer.reset();
+                    }
+                }
+                //End loop
+            }
+        });
+
+        info!(
+            "Transaction processing started for node {}",
+            self.authority_index
+        );
+    }
+
+    pub async fn stop(&mut self) {
+        info!("Stopping validator node {}", self.authority_index);
+        if let Some(authority) = self.consensus_authority.take() {
+            authority.stop().await;
+        }
+    }
+}
+
+impl ValidatorNode {
+    async fn start_rpc_server(
+        &self,
+        rpc_port: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("Starting RPC server on port {}", rpc_port);
 
         // Create a channel to forward transactions from RPC to ABCI
         let (rpc_tx_sender, mut rpc_tx_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1000);
@@ -152,7 +233,7 @@ impl ValidatorNode {
             }
         });
 
-        let addr: SocketAddr = format!("0.0.0.0:{}", self.rpc_port).parse()?;
+        let addr: SocketAddr = format!("0.0.0.0:{}", rpc_port).parse()?;
 
         tokio::spawn(async move {
             use axum::{
@@ -262,48 +343,5 @@ impl ValidatorNode {
         });
 
         Ok(())
-    }
-
-    async fn start_transaction_processing(
-        &self,
-        mut commit_receiver: mysten_metrics::monitored_mpsc::UnboundedReceiver<
-            consensus_core::CommittedSubDag,
-        >,
-        mut block_receiver: mysten_metrics::monitored_mpsc::UnboundedReceiver<
-            consensus_core::CertifiedBlocksOutput,
-        >,
-    ) {
-        // Process committed sub-dags from Mysticeti consensus
-        tokio::spawn(async move {
-            while let Some(committed_subdag) = commit_receiver.recv().await {
-                info!(
-                    "Received committed sub-dag from Mysticeti: {} blocks",
-                    committed_subdag.blocks.len()
-                );
-            }
-        });
-
-        // Process certified blocks from Mysticeti consensus
-        tokio::spawn(async move {
-            while let Some(certified_blocks) = block_receiver.recv().await {
-                info!(
-                    "Received certified blocks from Mysticeti: {} blocks",
-                    certified_blocks.blocks.len()
-                );
-                // TODO: Process certified blocks if needed
-            }
-        });
-
-        info!(
-            "Transaction processing started for node {}",
-            self.authority_index
-        );
-    }
-
-    pub async fn stop(&mut self) {
-        info!("Stopping validator node {}", self.authority_index);
-        if let Some(authority) = self.consensus_authority.take() {
-            authority.stop().await;
-        }
     }
 }

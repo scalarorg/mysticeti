@@ -1,8 +1,5 @@
 #![warn(unused_crate_dependencies)]
 
-mod committee;
-mod validator;
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,6 +8,7 @@ use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use consensus_config::Parameters;
 use consensus_core::CommitConsumer;
+use execute::validator::ValidatorNode;
 use mysten_metrics::RegistryService;
 use prometheus::Registry;
 use serde::{Deserialize, Serialize};
@@ -19,7 +17,6 @@ use tokio::signal;
 use tokio::sync::mpsc;
 use tracing::{Level, error, info};
 use tracing_subscriber;
-use validator::ValidatorNode;
 
 #[derive(Default, Serialize, Deserialize)]
 struct NodeConfig {
@@ -136,7 +133,7 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     // Create metrics registry
     let registry_service = RegistryService::new(Registry::new());
     // Create channels for exchange payload between engine client and consensus process
-    let (payload_tx, payload_rx) = mpsc::unbounded_channel();
+    let (tx_transactions, rx_transactions) = mpsc::unbounded_channel();
     // Create channels for exchange block between engine client and consensus process
     // Create commit consumer
     let (commit_consumer, commit_receiver, block_receiver) = CommitConsumer::new(0);
@@ -147,14 +144,13 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
             parameters,
             keypairs,
             registry_service,
-            commit_consumer,
-            payload_rx,
+            rx_transactions,
         )
         .await
         .map_err(|e| anyhow!("Failed to start validator node: {}", e))?;
 
     // Create and start the Engine API client
-    let mut client = ExecutionClient::new(node_config, payload_tx)?;
+    let mut client = RawTransactionClient::new(node_config, tx_transactions)?;
 
     info!("Consensus client starting with transaction subscription...");
 

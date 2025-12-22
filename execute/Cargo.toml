@@ -15,10 +15,13 @@ name = "network"
 path = "src/bin/network.rs"
 
 [[bin]]
-name = "validator"
-path = "src/bin/validator.rs"
+name = "evm-consensus"
+path = "src/bin/evm.rs"
+
+
 
 [dependencies]
+anyhow = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
@@ -39,16 +42,26 @@ sui-protocol-config = { workspace = true }
 # New dependencies for validator node
 axum = { version = "0.8", features = ["macros"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+serde_yaml = "0.9"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
 fastcrypto = { workspace = true }
 # Fastevm
 rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", package = "rpc-shared-api" }
+reth-rpc-layer = { git = "https://github.com/Galxe/gravity-reth.git", branch = "main", package = "reth-rpc-layer" }
+
+jsonrpsee = "0.23.2"
+jsonrpsee-core = "0.23.2"
+jsonrpsee-http-client = "0.23.2"
+
+tower = "0.5"
+
 # Tendermint integration
-tendermint-abci = { version = "0.40", default-features = false, features = ["kvstore-app", "binary"] }
-tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }
-tendermint-proto = { version = "0.40", default-features = false }
+# tendermint-abci = { version = "0.40", default-features = false, features = ["kvstore-app", "binary"] }
+# tendermint-rpc = { version = "0.40", default-features = false, features = ["http-client"] }
+# tendermint-proto = { version = "0.40", default-features = false }
+
 async-trait = "0.1"
 
 # gRPC dependencies

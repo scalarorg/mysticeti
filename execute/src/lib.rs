@@ -1,5 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-pub mod abci;
+// pub mod abci;
+pub mod evm;
 pub mod validator;
