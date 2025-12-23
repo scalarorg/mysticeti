@@ -8,11 +8,11 @@ use consensus_core::{
 };
 use consensus_types::block::{BlockRef, TransactionIndex};
 use mysten_metrics::RegistryService;
+use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
 use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
-use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 1 second even if not full
 // Simple transaction verifier that accepts all transactions
@@ -59,7 +59,7 @@ impl ValidatorNode {
         parameters: Parameters,
         keypairs: Vec<(NetworkKeyPair, ProtocolKeyPair)>,
         registry_service: RegistryService,
-        rx_transactions: mpsc::UnboundedReceiver<RawTransactions>,
+        rx_transactions: UnboundedReceiver<RawTransactions>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting validator node {}", self.authority_index);
 
@@ -121,7 +121,7 @@ impl ValidatorNode {
 
     async fn start_transaction_processing(
         &self,
-        mut rx_transactions: mpsc::UnboundedReceiver<RawTransactions>,
+        mut rx_transactions: UnboundedReceiver<RawTransactions>,
     ) {
         // Process received payload from execution client
         let transaction_client = self

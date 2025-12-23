@@ -3,13 +3,18 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::committee::{extract_peer_addresses, generate_committees, load_committees};
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use consensus_config::Parameters;
-use consensus_core::CommitConsumer;
-use execute::validator::ValidatorNode;
-use mysten_metrics::RegistryService;
+use consensus_core::CommitConsumerArgs;
+use execute::{
+    evm::{RawTransactionClient, extract_peer_addresses, generate_committees, load_committees},
+    validator::ValidatorNode,
+};
+use mysten_metrics::{
+    RegistryService,
+    monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+};
 use prometheus::Registry;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
@@ -133,10 +138,10 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     // Create metrics registry
     let registry_service = RegistryService::new(Registry::new());
     // Create channels for exchange payload between engine client and consensus process
-    let (tx_transactions, rx_transactions) = mpsc::unbounded_channel();
+    let (tx_transactions, rx_transactions) = unbounded_channel("raw_transactions");
     // Create channels for exchange block between engine client and consensus process
     // Create commit consumer
-    let (commit_consumer, commit_receiver, block_receiver) = CommitConsumer::new(0);
+    let (commit_consumer, commit_receiver, block_receiver) = CommitConsumerArgs::new(0, 0);
     // Start the validator node
     validator
         .start(
@@ -150,13 +155,18 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
         .map_err(|e| anyhow!("Failed to start validator node: {}", e))?;
 
     // Create and start the Engine API client
-    let mut client = RawTransactionClient::new(node_config, tx_transactions)?;
+    let mut client = RawTransactionClient::new(
+        node_config.jwt_secret,
+        node_config.execution_http_url,
+        node_config.execution_ws_url,
+        tx_transactions,
+    );
 
     info!("Consensus client starting with transaction subscription...");
 
     // Start the main client loop
     let client_handle = tokio::spawn(async move {
-        match client.start(commit_receiver, block_receiver).await {
+        match client.start(commit_receiver).await {
             Ok(()) => info!("Engine API client stopped normally"),
             Err(e) => error!("Engine API client failed: {}", e),
         }
