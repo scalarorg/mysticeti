@@ -4,9 +4,9 @@ use axum::http;
 use consensus_core::{CertifiedBlocksOutput, CommittedSubDag};
 use jsonrpsee_core::client::{ClientT, SubscriptionClientT};
 use jsonrpsee_http_client::HttpClientBuilder;
+use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use reth_rpc_layer::{AuthClientLayer, JwtSecret, secret_to_bearer_header};
 use rpc_shared_api::{MysticetiConsensusApiClient, RawTransactionApiClient};
-use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing::{debug, error, info};
 
 use crate::evm::create_evm_committed_subdag;
@@ -17,7 +17,7 @@ pub struct RawTransactionClient {
     jwt_secret: String,
     execution_http_url: String,
     execution_ws_url: String,
-    tx_transactions: mpsc::UnboundedSender<RawTransactions>,
+    tx_transactions: UnboundedSender<RawTransactions>,
 }
 
 impl RawTransactionClient {
@@ -25,7 +25,7 @@ impl RawTransactionClient {
         jwt_secret: String,
         execution_http_url: String,
         execution_ws_url: String,
-        tx_transactions: mpsc::UnboundedSender<RawTransactions>,
+        tx_transactions: UnboundedSender<RawTransactions>,
     ) -> Self {
         Self {
             jwt_secret,
@@ -87,7 +87,6 @@ impl RawTransactionClient {
     pub async fn start(
         &mut self,
         mut commit_receiver: UnboundedReceiver<CommittedSubDag>,
-        _block_receiver: UnboundedReceiver<CertifiedBlocksOutput>,
     ) -> Result<()> {
         info!("Starting Engine API client...");
 

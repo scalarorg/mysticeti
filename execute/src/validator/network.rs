@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::PathBuf;
-use tokio::sync::mpsc;
 use tracing::info;
 
 use consensus_config::{Parameters, local_committee_and_keys};
 use mysten_metrics::RegistryService;
+use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use prometheus::Registry;
 
 use crate::validator::node::ValidatorNode;
@@ -50,7 +50,7 @@ impl ValidatorNetwork {
             let node_registry_service = RegistryService::new(Registry::new());
 
             // Create a channel to receive transactions
-            let (tx_sender, rx_transactions) = mpsc::unbounded_channel();
+            let (tx_sender, rx_transactions) = unbounded_channel("raw_transactions");
 
             // Start the node
             node.start(

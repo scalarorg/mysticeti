@@ -1,8 +1,9 @@
 use consensus_core::{BlockAPI, CommittedSubDag};
+use serde_json;
 
 use rpc_shared_api::{
     BlockDigest, BlockRef, CommitRef, CommittedSubDag as EvmCommittedSubDag, SignedBlock,
-    VerifiedBlock,
+    Transaction, VerifiedBlock,
 };
 pub fn create_evm_committed_subdag(subdag: CommittedSubDag) -> EvmCommittedSubDag {
     let CommittedSubDag {
@@ -19,10 +20,18 @@ pub fn create_evm_committed_subdag(subdag: CommittedSubDag) -> EvmCommittedSubDa
         .into_iter()
         .map(|vb| {
             // Extract transactions from the block (available through Deref<Target = Block>)
-            let transactions = vb.transactions().to_vec();
+            let consensus_txs = vb.transactions();
 
-            // Create a reth_extension::SignedBlock with the actual transaction data
-            let reth_signed_block = SignedBlock::new(transactions);
+            // Convert consensus-core transactions to rpc-shared-api transactions
+            let transactions: Vec<Transaction> = consensus_txs
+                .iter()
+                .map(|tx| Transaction::new(tx.data().to_vec()))
+                .collect();
+
+            // Create a SignedBlock with the transaction data
+            // Since new_genesis is pub(crate) and fields are private, we use serde
+            // to construct it from JSON, which works because SignedBlock implements Deserialize
+            let reth_signed_block: SignedBlock = SignedBlock::new(transactions);
 
             // For the digest, we'll use a computed hash of the transactions for now
             // This can be enhanced when we have better access to the actual digest
