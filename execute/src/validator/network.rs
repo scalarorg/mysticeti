@@ -1,12 +1,13 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use consensus_core::CommitConsumerArgs;
 use std::path::PathBuf;
 use tracing::info;
 
 use consensus_config::{Parameters, local_committee_and_keys};
 use mysten_metrics::RegistryService;
-use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use mysten_metrics::monitored_mpsc::unbounded_channel;
 use prometheus::Registry;
 
 use crate::validator::node::ValidatorNode;
@@ -49,8 +50,10 @@ impl ValidatorNetwork {
             // Create a unique registry for each node to avoid conflicts
             let node_registry_service = RegistryService::new(Registry::new());
 
+            let (commit_consumer, _commit_receiver, _block_receiver) =
+                CommitConsumerArgs::new(0, 0);
             // Create a channel to receive transactions
-            let (tx_sender, rx_transactions) = unbounded_channel("raw_transactions");
+            let (_tx_sender, rx_transactions) = unbounded_channel("raw_transactions");
 
             // Start the node
             node.start(
@@ -58,6 +61,7 @@ impl ValidatorNetwork {
                 parameters,
                 keypairs.clone(),
                 node_registry_service,
+                commit_consumer,
                 rx_transactions,
             )
             .await?;

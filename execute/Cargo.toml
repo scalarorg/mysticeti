@@ -45,10 +45,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_yaml = "0.9"
 base64 = "0.22"
+hex = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
 fastcrypto = { workspace = true }
 # Fastevm
-rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", rev = "72d49ddbeb5ea2a756e7d361d0273ccca2faf174", package = "rpc-shared-api" }
+rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", rev = "3f66d7baa588d0bc8ba83733b371b60e94bfc0cf", package = "rpc-shared-api" }
 reth-rpc-layer = { git = "https://github.com/Galxe/gravity-reth.git", branch = "main", package = "reth-rpc-layer" }
 
 jsonrpsee = "0.26.0"
@@ -66,15 +67,15 @@ tower = "0.5"
 async-trait = "0.1"
 
 # gRPC dependencies
-tonic = { version = "0.10", features = ["transport", "prost"] }
-prost = "0.12"
+tonic.workspace = true
+prost.workspace = true
 
 # Additional dependencies for enhanced integration
 parking_lot = "0.12"
 tap = "1.0"
 
 [build-dependencies]
-tonic-build = "0.10"
+tonic-build = { workspace = true }
 
 [dev-dependencies]
 # Test dependencies

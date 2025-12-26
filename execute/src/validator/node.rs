@@ -8,11 +8,11 @@ use consensus_core::{
 };
 use consensus_types::block::{BlockRef, TransactionIndex};
 use mysten_metrics::RegistryService;
-use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use mysten_metrics::monitored_mpsc::UnboundedReceiver;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
-use sui_protocol_config::{ConsensusNetwork, ProtocolConfig};
+use sui_protocol_config::ProtocolConfig;
 use tracing::{debug, error, info};
 const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 1 second even if not full
 // Simple transaction verifier that accepts all transactions
@@ -59,6 +59,7 @@ impl ValidatorNode {
         parameters: Parameters,
         keypairs: Vec<(NetworkKeyPair, ProtocolKeyPair)>,
         registry_service: RegistryService,
+        commit_consumer: CommitConsumerArgs,
         rx_transactions: UnboundedReceiver<RawTransactions>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Starting validator node {}", self.authority_index);
@@ -80,9 +81,6 @@ impl ValidatorNode {
         };
         // Log the loaded parameters for debugging
         info!("Loaded consensus parameters: {:?}", parameters);
-        // Create commit consumer
-        let (commit_consumer, commit_receiver, block_receiver) = CommitConsumerArgs::new(0, 0);
-
         // Start the consensus authority
         let consensus_authority = ConsensusAuthority::start(
             NetworkType::Tonic,
@@ -154,7 +152,7 @@ impl ValidatorNode {
                             let batch: Vec<Vec<u8>> = buffer.drain(0..max_transactions_in_block_count).collect();
                             let batch_size = batch.len();
                             total_send_txs += batch_size as u64;
-                            if let Ok((block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
+                            if let Ok((_block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
                                 debug!("[Threshold] Sending batch of {} transactions to mysticeti. Total sent/received transactions: {}/{}", batch_size, total_send_txs, total_received_txs);
                             } else {
                                 error!("[Threshold] Failed to submit batch of {} transactions", batch_size);
@@ -168,7 +166,7 @@ impl ValidatorNode {
                             let batch = std::mem::take(&mut buffer);
                             let batch_size = batch.len();
                             total_send_txs += batch_size as u64;
-                            if let Ok((block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
+                            if let Ok((_block_ref, _transaction_indices, _status_receiver)) = transaction_client.submit(batch).await {
                                 info!("[Timer] Sending batch of {} transactions to mysticeti. Total sent/received transactions: {}/{}", batch_size, total_send_txs, total_received_txs);
                             } else {
                                 error!("[Timer] Failed to submit batch of {} transactions", batch_size);
