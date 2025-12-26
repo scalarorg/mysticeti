@@ -1,10 +1,11 @@
 use anyhow::Result;
 
 use axum::http;
-use consensus_core::{CertifiedBlocksOutput, CommittedSubDag};
-use jsonrpsee_core::client::{ClientT, SubscriptionClientT};
+use consensus_core::CommittedSubDag;
+use jsonrpsee::ws_client::WsClientBuilder;
+use jsonrpsee_core::client::SubscriptionClientT;
 use jsonrpsee_http_client::HttpClientBuilder;
-use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use mysten_metrics::monitored_mpsc::{UnboundedReceiver, UnboundedSender};
 use reth_rpc_layer::{AuthClientLayer, JwtSecret, secret_to_bearer_header};
 use rpc_shared_api::{MysticetiConsensusApiClient, RawTransactionApiClient};
 use tracing::{debug, error, info};
@@ -78,10 +79,14 @@ impl RawTransactionClient {
         let mut headers = http::HeaderMap::new();
         headers.insert(http::header::AUTHORIZATION, auth_header);
 
-        HttpClientBuilder::default()
+        WsClientBuilder::default()
             .set_headers(headers)
             .build(url)
-            .expect("Failed to create ws client")
+            .await
+            .expect(&format!(
+                "Failed to create ws client with url: {}",
+                self.ws_url()
+            ))
     }
 
     pub async fn start(
@@ -124,9 +129,6 @@ impl RawTransactionClient {
         let http_client = self.http_client();
         let subdag_handler = tokio::spawn(async move {
             let mut total_committed_txs = 0;
-            let mut total_sent_txs = 0;
-            // let mut buffer = Vec::new();
-            // let mut last_sent = std::time::Instant::now();
             loop {
                 if let Some(subdag) = commit_receiver.recv().await {
                     //TODO: findout why timestamp_ms is 0
@@ -144,19 +146,23 @@ impl RawTransactionClient {
                     {
                         error!("submit_committed_subdags failed: {:?}", e);
                     }
+                    info!(
+                        "Received committed subdag with timestamp: {:?}, Commit Index {:?}, Leader round {:?}, Tx count {:?}, Total txs {:?}",
+                        timestamp_ms, commit_index, leader_round, current_len, total_committed_txs
+                    );
                     // Log every 100 commits or when the first non-empty subdag is committed
-                    if total_committed_txs > 0
-                        && (commit_index % 100 == 0 || total_committed_txs == current_len)
-                    {
-                        info!(
-                            "Received committed subdag with timestamp: {:?}, Commit Index {:?}, Leader round {:?}, Tx count {:?}, Total txs {:?}",
-                            timestamp_ms,
-                            commit_index,
-                            leader_round,
-                            current_len,
-                            total_committed_txs
-                        );
-                    }
+                    // if total_committed_txs > 0
+                    //     && (commit_index % 100 == 0 || total_committed_txs == current_len)
+                    // {
+                    //     info!(
+                    //         "Received committed subdag with timestamp: {:?}, Commit Index {:?}, Leader round {:?}, Tx count {:?}, Total txs {:?}",
+                    //         timestamp_ms,
+                    //         commit_index,
+                    //         leader_round,
+                    //         current_len,
+                    //         total_committed_txs
+                    //     );
+                    // }
                 }
             }
         });
