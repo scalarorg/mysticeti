@@ -2674,6 +2674,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
 
 [[package]]
+name = "evm-consensus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert2",
+ "async-trait",
+ "axum",
+ "clap",
+ "consensus-config",
+ "consensus-core",
+ "execute",
+ "fastcrypto",
+ "hex",
+ "jsonrpsee",
+ "jsonrpsee-core",
+ "jsonrpsee-http-client",
+ "mysten-metrics",
+ "prometheus",
+ "rand 0.8.5",
+ "reth-rpc-layer",
+ "rpc-shared-api",
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.34+deprecated",
+ "tempfile",
+ "test-log",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "execute"
 version = "0.1.0"
 dependencies = [
@@ -2681,7 +2715,6 @@ dependencies = [
  "assert2",
  "async-trait",
  "axum",
- "base64 0.22.1",
  "clap",
  "color-eyre",
  "consensus-config",

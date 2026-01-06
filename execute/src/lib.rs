@@ -2,5 +2,4 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // pub mod abci;
-pub mod evm;
 pub mod validator;
