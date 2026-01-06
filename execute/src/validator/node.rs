@@ -81,6 +81,7 @@ impl ValidatorNode {
         };
         // Log the loaded parameters for debugging
         info!("Loaded consensus parameters: {:?}", parameters);
+        let mut protocol_config = ProtocolConfig::get_for_max_version_UNSAFE();
         // Start the consensus authority
         let consensus_authority = ConsensusAuthority::start(
             NetworkType::Tonic,
@@ -88,7 +89,7 @@ impl ValidatorNode {
             self.authority_index,
             committee,
             parameters,
-            ProtocolConfig::get_for_max_version_UNSAFE(),
+            protocol_config,
             protocol_keypair.clone(),
             network_keypair.clone(),
             Arc::new(Clock::new_for_test(0)),

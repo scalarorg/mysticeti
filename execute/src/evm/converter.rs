@@ -1,11 +1,16 @@
-use consensus_core::{BlockAPI, CommitRef as ConsensusCommitRef, CommittedSubDag};
-
+use consensus_config::Authority;
+use consensus_core::{BlockAPI, CommittedSubDag};
 use rpc_shared_api::{
     BlockDigest, BlockRef, CommitRef, CommittedSubDag as EvmCommittedSubDag, SignedBlock,
     Transaction, VerifiedBlock,
 };
 
-pub fn create_evm_committed_subdag(subdag: CommittedSubDag) -> EvmCommittedSubDag {
+use crate::evm::committee::generate_validator_sui_address;
+
+pub fn create_evm_committed_subdag(
+    subdag: CommittedSubDag,
+    leader_authority: Option<&Authority>,
+) -> EvmCommittedSubDag {
     let CommittedSubDag {
         leader,
         blocks,
@@ -16,6 +21,16 @@ pub fn create_evm_committed_subdag(subdag: CommittedSubDag) -> EvmCommittedSubDa
         decided_with_local_blocks: _decided_with_local_blocks,
         recovered_rejected_transactions: _recovered_rejected_transactions,
     } = subdag;
+
+    let leader_address = leader_authority
+        .and_then(|authority| {
+            let sui_address = generate_validator_sui_address(&authority.network_key);
+            hex::decode(&sui_address)
+                .map(|sui_address_bytes| format!("0x{}", hex::encode(sui_address_bytes.as_slice())))
+                .ok()
+        })
+        .unwrap_or_default();
+
     let blocks = blocks
         .into_iter()
         .map(|vb| {
@@ -63,6 +78,7 @@ pub fn create_evm_committed_subdag(subdag: CommittedSubDag) -> EvmCommittedSubDa
 
     EvmCommittedSubDag {
         leader: BlockRef {
+            leader_address,
             digest: leader.digest.0,
             round: leader.round as u64,
         },
@@ -125,7 +141,7 @@ mod tests {
     fn test_create_evm_committed_subdag_empty_blocks() {
         let subdag = create_test_committed_subdag(1, 0, vec![], 1000, 1);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 0);
         assert_eq!(evm_subdag.timestamp_ms, 1000);
@@ -138,7 +154,7 @@ mod tests {
         let leader_ref = block.reference();
         let subdag = create_test_committed_subdag(1, 0, vec![block], 2000, 2);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 1);
         assert_eq!(evm_subdag.blocks[0].digest, BlockDigest::MIN);
@@ -155,7 +171,7 @@ mod tests {
         let leader_ref = block.reference();
         let subdag = create_test_committed_subdag(2, 1, vec![block], 3000, 3);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 1);
         assert_eq!(evm_subdag.blocks[0].block.transactions().len(), 2);
@@ -180,7 +196,7 @@ mod tests {
         let leader_ref = block1.reference();
         let subdag = create_test_committed_subdag(1, 0, vec![block1, block2, block3], 4000, 4);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 3);
         assert_eq!(evm_subdag.blocks[0].block.transactions().len(), 1);
@@ -201,7 +217,7 @@ mod tests {
             (AuthorityIndex::new_for_test(2), 150),
         ];
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.reputation_scores_desc.len(), 3);
         assert_eq!(evm_subdag.reputation_scores_desc[0], (0, 100));
@@ -219,7 +235,7 @@ mod tests {
         let leader_ref = block1.reference();
         let subdag = create_test_committed_subdag(4, 0, vec![block1, block2], 6000, 6);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 2);
         // Both blocks have the same transaction data, so they should have the same digest
@@ -235,7 +251,7 @@ mod tests {
         let leader_ref = block1.reference();
         let subdag = create_test_committed_subdag(5, 0, vec![block1, block2], 7000, 7);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 2);
         // Blocks with different transactions should have different digests
@@ -249,7 +265,7 @@ mod tests {
         let commit_ref = ConsensusCommitRef::new(100, CommitDigest::MIN);
         let subdag = CommittedSubDag::new(leader_ref, vec![block], 8000, commit_ref);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.commit_ref.round, 100);
         assert_eq!(evm_subdag.commit_ref.digest, CommitDigest::MIN.into_inner());
@@ -263,7 +279,7 @@ mod tests {
         let leader_ref = block.reference();
         let subdag = create_test_committed_subdag(7, 0, vec![block], 9000, 8);
 
-        let evm_subdag = create_evm_committed_subdag(subdag);
+        let evm_subdag = create_evm_committed_subdag(subdag, None);
 
         assert_eq!(evm_subdag.blocks.len(), 1);
         assert_eq!(evm_subdag.blocks[0].block.transactions().len(), 1);

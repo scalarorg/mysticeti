@@ -49,7 +49,7 @@ hex = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
 fastcrypto = { workspace = true }
 # Fastevm
-rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", rev = "3f66d7baa588d0bc8ba83733b371b60e94bfc0cf", package = "rpc-shared-api" }
+rpc-shared-api = { git = "https://github.com/scalarorg/rpc-shared-api.git", branch = "main", package = "rpc-shared-api" }
 reth-rpc-layer = { git = "https://github.com/Galxe/gravity-reth.git", branch = "main", package = "reth-rpc-layer" }
 
 jsonrpsee = "0.26.0"
