@@ -69,53 +69,5 @@ async fn main() -> Result<()> {
         args.authority_index, args.rpc_port, abci_port
     );
 
-    // // Create validator node
-    // let mut validator = ValidatorNode::new(
-    //     args.authority_index,
-    //     args.working_directory.clone(),
-    //     args.rpc_port,
-    // );
-
-    // // Create committee and keypairs - use Docker configuration if peer addresses are provided
-    // let committee_size = 4; // We'll create a 4-node committee even for single node
-    // let (committee, keypairs) = if args.peer_addresses.is_some() {
-    //     info!(
-    //         "Using Docker network configuration with peer addresses: {:?}",
-    //         args.peer_addresses
-    //     );
-    //     consensus_config::local_committee_and_keys(0, vec![1; committee_size])
-    // } else {
-    //     info!("Using local network configuration");
-    //     consensus_config::local_committee_and_keys(0, vec![1; committee_size])
-    // };
-
-    // // Create metrics registry
-    // let registry_service = RegistryService::new(Registry::new());
-
-    // // Start the validator node
-    // validator
-    //     .start(committee, keypairs, registry_service)
-    //     .await
-    //     .map_err(|e| eyre::eyre!("Failed to start validator node: {}", e))?;
-
-    // // Print endpoints
-    // println!("\n=== Single Validator Node Started ===");
-    // println!("Authority Index: {}", args.authority_index);
-    // println!(
-    //     "RPC Endpoint: http://127.0.0.1:{}/broadcast_tx_async",
-    //     args.rpc_port
-    // );
-    // println!("Health Check: http://127.0.0.1:{}/health", args.rpc_port);
-    // println!("ABCI Port: {}", abci_port);
-    // println!("Working Directory: {}", args.working_directory.display());
-    // println!("\nPress Ctrl+C to stop the node");
-
-    // // Wait for shutdown signal
-    // tokio::signal::ctrl_c().await.unwrap();
-
-    // // Stop the validator
-    // validator.stop().await;
-
-    // println!("Validator node stopped");
     Ok(())
 }

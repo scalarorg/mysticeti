@@ -1,5 +1,6 @@
 use consensus_config::Authority;
 use consensus_core::{BlockAPI, CommittedSubDag};
+use fastcrypto::hash::{Blake2b256, HashFunction};
 use rpc_shared_api::{
     BlockDigest, BlockRef, CommitRef, CommittedSubDag as EvmCommittedSubDag, SignedBlock,
     Transaction, VerifiedBlock,
@@ -56,14 +57,10 @@ pub fn create_evm_committed_subdag(
                 .flat_map(|tx| tx.data().to_vec())
                 .collect::<Vec<u8>>();
             let reth_digest = if !digest_bytes.is_empty() {
-                // Use a simple hash of the transaction data as a digest
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::{Hash, Hasher};
-                let mut hasher = DefaultHasher::new();
-                digest_bytes.hash(&mut hasher);
-                let hash_value = hasher.finish();
-                let mut digest_array = [0u8; 32];
-                digest_array[..8].copy_from_slice(&hash_value.to_le_bytes());
+                // Use Blake2b256 hash of the transaction data as a digest for cryptographic strength
+                let mut hasher = Blake2b256::new();
+                hasher.update(&digest_bytes);
+                let digest_array: [u8; 32] = hasher.finalize().into();
                 BlockDigest(digest_array)
             } else {
                 BlockDigest::MIN

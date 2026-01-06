@@ -250,7 +250,13 @@ fn main() -> Result<()> {
                 .collect();
             let network_ports_vec: Vec<u16> = network_ports
                 .split(',')
-                .map(|s| s.trim().parse::<u16>().unwrap_or(26657))
+                .map(|s| {
+                    let trimmed = s.trim();
+                    trimmed.parse::<u16>().unwrap_or_else(|_| {
+                        eprintln!("Warning: Invalid port '{}', using default 26657", trimmed);
+                        26657
+                    })
+                })
                 .collect();
 
             generate_validators(

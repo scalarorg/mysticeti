@@ -2693,8 +2693,8 @@ dependencies = [
  "mysten-metrics",
  "prometheus",
  "rand 0.8.5",
- "reth-rpc-layer",
- "rpc-shared-api",
+ "reth-rpc-layer 1.8.3 (git+https://github.com/Galxe/gravity-reth.git?rev=59d2d35098ecc472c0a5b95231777723b4f5738c)",
+ "rpc-shared-api 0.1.0 (git+https://github.com/scalarorg/rpc-shared-api.git?rev=9a2d4aa302571d568b443b957d73a171b10ae727)",
  "serde",
  "serde_json",
  "serde_yaml 0.9.34+deprecated",
@@ -2734,8 +2734,8 @@ dependencies = [
  "prost 0.13.5",
  "rand 0.8.5",
  "reqwest",
- "reth-rpc-layer",
- "rpc-shared-api",
+ "reth-rpc-layer 1.8.3 (git+https://github.com/Galxe/gravity-reth.git?branch=main)",
+ "rpc-shared-api 0.1.0 (git+https://github.com/scalarorg/rpc-shared-api.git?branch=main)",
  "serde",
  "serde_json",
  "serde_yaml 0.9.34+deprecated",
@@ -6028,6 +6028,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-rpc-layer"
+version = "1.8.3"
+source = "git+https://github.com/Galxe/gravity-reth.git?rev=59d2d35098ecc472c0a5b95231777723b4f5738c#59d2d35098ecc472c0a5b95231777723b4f5738c"
+dependencies = [
+ "alloy-rpc-types-engine",
+ "http 1.4.0",
+ "jsonrpsee-http-client",
+ "pin-project",
+ "tower 0.5.2",
+ "tower-http 0.6.8",
+ "tracing",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6096,6 +6110,20 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 name = "rpc-shared-api"
 version = "0.1.0"
 source = "git+https://github.com/scalarorg/rpc-shared-api.git?branch=main#2c0a62d655e7fc16d10e7e72e34fe28fddd01f2b"
+dependencies = [
+ "alloy-primitives 0.5.4",
+ "anyhow",
+ "base64 0.22.1",
+ "bytes",
+ "jsonrpsee",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rpc-shared-api"
+version = "0.1.0"
+source = "git+https://github.com/scalarorg/rpc-shared-api.git?rev=9a2d4aa302571d568b443b957d73a171b10ae727#9a2d4aa302571d568b443b957d73a171b10ae727"
 dependencies = [
  "alloy-primitives 0.5.4",
  "anyhow",

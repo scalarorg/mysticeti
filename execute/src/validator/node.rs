@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use sui_protocol_config::ProtocolConfig;
 use tracing::{debug, error, info};
-const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 1 second even if not full
+const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 100ms even if not full
 // Simple transaction verifier that accepts all transactions
 struct SimpleTransactionVerifier;
 
@@ -126,7 +126,9 @@ impl ValidatorNode {
         let transaction_client = self
             .consensus_authority
             .as_ref()
-            .unwrap()
+            .expect(
+                "start_transaction_processing called before consensus_authority was initialized",
+            )
             .transaction_client();
         let max_transactions_in_block_count =
             self.protocol_config.max_num_transactions_in_block() as usize;
