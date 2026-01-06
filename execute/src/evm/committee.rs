@@ -1,7 +1,10 @@
 use anyhow::Result;
-use consensus_config::{Authority, AuthorityKeyPair, Committee, NetworkKeyPair, ProtocolKeyPair};
+use consensus_config::{
+    Authority, AuthorityKeyPair, Committee, NetworkKeyPair, NetworkPublicKey, ProtocolKeyPair,
+};
 use fastcrypto::{
     bls12381, ed25519,
+    hash::{Blake2b256, HashFunction},
     traits::{KeyPair as _, ToFromBytes as _},
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -477,11 +480,17 @@ fn is_valid_port(port: &str) -> bool {
 /// Genesis configuration structure matching the expected JSON format
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenesisConfig {
+    #[serde(rename = "validatorAddresses")]
     pub validator_addresses: Vec<String>,
+    #[serde(rename = "consensusPublicKeys")]
     pub consensus_public_keys: Vec<String>,
+    #[serde(rename = "votingPowers")]
     pub voting_powers: Vec<String>,
+    #[serde(rename = "validatorNetworkAddresses")]
     pub validator_network_addresses: Vec<String>,
+    #[serde(rename = "fullnodeNetworkAddresses")]
     pub fullnode_network_addresses: Vec<String>,
+    #[serde(rename = "aptosAddresses")]
     pub aptos_addresses: Vec<String>,
 }
 
@@ -491,12 +500,14 @@ pub struct GenesisConfig {
 /// a genesis configuration in JSON format at `genesis_path`.
 ///
 /// The genesis config includes:
-/// - validatorAddresses: Ethereum addresses (0x-prefixed)
-/// - consensusPublicKeys: BLS12381 public keys in hex (96 hex chars)
+/// - validatorAddresses: Ethereum-style addresses (0x + 40 hex chars = 20 bytes)
+///   Generated from Sui address (last 20 bytes of 32-byte Sui address)
+///   Sui address is generated from network public key using Blake2b256: hash(Ed25519_flag || public_key_bytes)[0..32]
+/// - consensusPublicKeys: BLS12381 public keys in hex (96 hex chars, 48 bytes compressed)
 /// - votingPowers: Stake values as strings
-/// - validatorNetworkAddresses: Multiaddr format with noise-ik protocol
+/// - validatorNetworkAddresses: Multiaddr format with noise-ik protocol (uses full 32-byte Sui address)
 /// - fullnodeNetworkAddresses: Same as validatorNetworkAddresses
-/// - aptosAddresses: Aptos addresses in hex (64 hex chars)
+/// - aptosAddresses: Sui addresses in hex (64 hex chars, full 32-byte address)
 pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Result<()> {
     // Read and parse validator configs from config_path
     let content = fs::read_to_string(config_path)?;
@@ -537,39 +548,38 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
             NetworkKeyPair::generate(&mut rng)
         };
 
-        // Generate validator address from authority key
-        let authority_pub_key = authority_keypair.public();
-        let authority_pub_key_bytes = authority_pub_key.to_bytes();
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        authority_pub_key_bytes.hash(&mut hasher);
-        let hash_value = hasher.finish();
-        let mut eth_address_bytes = [0u8; 20];
-        eth_address_bytes[..8].copy_from_slice(&hash_value.to_le_bytes());
-        let validator_address = format!("0x{}", hex::encode(eth_address_bytes));
+        // Generate Sui-style address from network public key
+        // Sui address = Blake2b256(Ed25519_flag || public_key_bytes)[0..32]
+        let sui_address = generate_validator_sui_address(&network_keypair.public());
+        let sui_address_bytes = hex::decode(&sui_address)?;
 
-        // Generate Aptos address from authority key
-        let mut aptos_address_bytes = [0u8; 32];
-        aptos_address_bytes[..20].copy_from_slice(&eth_address_bytes);
-        // Fill remaining bytes with hash
-        aptos_address_bytes[20..28].copy_from_slice(&hash_value.to_le_bytes()[..8]);
-        aptos_address_bytes[28..32].copy_from_slice(&hash_value.to_le_bytes()[..4]);
-        let aptos_address = hex::encode(aptos_address_bytes);
+        // Validator address: Ethereum-style (0x + last 20 bytes of Sui address)
+        // Take the last 20 bytes from the 32-byte Sui address
+        let validator_address_bytes = &sui_address_bytes[12..];
+        let validator_address = format!("0x{}", hex::encode(validator_address_bytes));
 
-        // Get consensus public key (BLS12381, 48 bytes = 96 hex chars)
+        // Get consensus public key (BLS12381, compressed format: 48 bytes = 96 hex chars)
+        // BLS12381 public keys are stored in compressed format (48 bytes)
+        // fastcrypto's as_bytes() may return uncompressed (96 bytes), so we take first 48 bytes
         let consensus_pub_key = authority_keypair.public();
         let consensus_pub_key_bytes = consensus_pub_key.to_bytes();
-        let consensus_public_key = hex::encode(consensus_pub_key_bytes);
 
-        // Get network public key for multiaddr (Ed25519, 32 bytes = 64 hex chars)
-        let network_pub_key_bytes = network_keypair.public().to_bytes();
-        let network_public_key_hex = hex::encode(network_pub_key_bytes);
+        // Take only the first 48 bytes for compressed format
+        let compressed_bytes: Vec<u8> = if consensus_pub_key_bytes.len() >= 48 {
+            consensus_pub_key_bytes[..48].to_vec()
+        } else {
+            consensus_pub_key_bytes.to_vec()
+        };
+        let consensus_public_key = hex::encode(&compressed_bytes); // 96 hex chars
 
-        // Build network address in format: /ip4/{ip}/tcp/{port}/noise-ik/{network_public_key}/handshake/0
+        // Aptos address is the full Sui address (32 bytes, 64 hex chars)
+        let aptos_address = sui_address;
+
+        // Build network address in format: /ip4/{ip}/tcp/{port}/noise-ik/{sui_address}/handshake/0
+        // The network address uses the full Sui address (32 bytes, 64 hex chars)
         let validator_network_address = format!(
             "/ip4/{}/tcp/{}/noise-ik/{}/handshake/0",
-            validator.ip_address, validator.port, network_public_key_hex
+            validator.ip_address, validator.port, aptos_address
         );
 
         validator_addresses.push(validator_address);
@@ -612,6 +622,34 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
     Ok(())
 }
 
+/// Generates a Sui-style address from a network public key
+///
+/// This follows Sui's address generation algorithm:
+/// 1. Create a Blake2b256 hasher
+/// 2. Hash the signature scheme flag byte (0x00 for Ed25519)
+/// 3. Hash the public key bytes
+/// 4. Take the first 32 bytes of the digest as the address
+///
+/// Returns the address as a hex string (64 hex characters, no 0x prefix)
+pub fn generate_validator_sui_address(network_pub_key: &NetworkPublicKey) -> String {
+    // Ed25519 signature scheme flag (as per Sui's SignatureScheme::flag())
+    const ED25519_SCHEME_FLAG: u8 = 0x00;
+
+    // Create Blake2b256 hasher (Sui uses Blake2b256, not Keccak256)
+    let mut hasher = Blake2b256::new();
+
+    // Hash the signature scheme flag
+    hasher.update([ED25519_SCHEME_FLAG]);
+
+    // Hash the public key bytes
+    hasher.update(network_pub_key.to_bytes());
+
+    // Get the digest (32 bytes)
+    let address_bytes: [u8; 32] = hasher.finalize().into();
+
+    // Return as hex string (no 0x prefix, 64 hex characters)
+    hex::encode(address_bytes)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1407,7 +1445,7 @@ mod tests {
             let network_addr = &genesis_config.validator_network_addresses[i];
             let fullnode_addr = &genesis_config.fullnode_network_addresses[i];
             let aptos_addr = &genesis_config.aptos_addresses[i];
-            // Verify validator address format (0x + 40 hex chars = 42 chars total)
+            // Verify validator address format (Ethereum-style: 0x + 40 hex chars = 20 bytes)
             assert!(
                 validator_addr.starts_with("0x"),
                 "Validator address {} should start with 0x",
@@ -1416,21 +1454,31 @@ mod tests {
             assert_eq!(
                 validator_addr.len(),
                 42,
-                "Validator address {} should be 42 chars (0x + 40 hex)",
-                i
+                "Validator address {} should be 42 chars (0x + 40 hex), got {}",
+                i,
+                validator_addr.len()
             );
             assert!(
                 hex::decode(&validator_addr[2..]).is_ok(),
                 "Validator address {} should be valid hex",
                 i
             );
+            let decoded_addr = hex::decode(&validator_addr[2..]).unwrap();
+            assert_eq!(
+                decoded_addr.len(),
+                20,
+                "Validator address {} should decode to exactly 20 bytes, got {}",
+                i,
+                decoded_addr.len()
+            );
 
-            // Verify consensus public key format (BLS12381 public key)
-            // BLS12381 public keys can be 48 or 96 bytes depending on compression
-            assert!(
-                consensus_key.len() >= 96,
-                "Consensus public key {} should be at least 96 hex chars",
-                i
+            // Verify consensus public key format (BLS12381 compressed: 48 bytes = 96 hex chars)
+            assert_eq!(
+                consensus_key.len(),
+                96,
+                "Consensus public key {} should be exactly 96 hex chars (48 bytes compressed), got {}",
+                i,
+                consensus_key.len()
             );
             assert!(
                 hex::decode(consensus_key).is_ok(),
@@ -1438,9 +1486,10 @@ mod tests {
                 i
             );
             let decoded_key = hex::decode(consensus_key).unwrap();
-            assert!(
-                decoded_key.len() >= 48,
-                "Consensus public key {} should decode to at least 48 bytes, got {}",
+            assert_eq!(
+                decoded_key.len(),
+                48,
+                "Consensus public key {} should decode to exactly 48 bytes (compressed format), got {}",
                 i,
                 decoded_key.len()
             );
@@ -1503,22 +1552,32 @@ mod tests {
                 i
             );
 
-            // Verify Aptos address format (64 hex chars = 32 bytes)
+            // Verify Aptos address format (64 hex chars = 32 bytes, full Sui address)
             assert_eq!(
                 aptos_addr.len(),
                 64,
-                "Aptos address {} should be 64 hex chars (32 bytes)",
-                i
+                "Aptos address {} should be exactly 64 hex chars (32 bytes), got {}",
+                i,
+                aptos_addr.len()
             );
             assert!(
                 hex::decode(aptos_addr).is_ok(),
                 "Aptos address {} should be valid hex",
                 i
             );
+            let decoded_aptos = hex::decode(aptos_addr).unwrap();
             assert_eq!(
-                hex::decode(aptos_addr).unwrap().len(),
+                decoded_aptos.len(),
                 32,
-                "Aptos address {} should decode to 32 bytes",
+                "Aptos address {} should decode to exactly 32 bytes, got {}",
+                i,
+                decoded_aptos.len()
+            );
+            // Aptos address should contain the validator address (last 20 bytes)
+            let validator_addr_no_prefix = &validator_addr[2..];
+            assert!(
+                aptos_addr.ends_with(validator_addr_no_prefix),
+                "Aptos address {} should end with validator address (last 20 bytes)",
                 i
             );
         }
@@ -1684,18 +1743,31 @@ mod tests {
         let file_content = fs::read_to_string(&genesis_path).unwrap();
         let genesis_config: GenesisConfig = serde_json::from_str(&file_content).unwrap();
 
-        // Verify the consensus public key matches the provided authority key
-        let expected_consensus_key = hex::encode(authority_keypair.public().to_bytes());
+        // Verify the consensus public key matches the provided authority key (compressed format: 48 bytes)
+        let expected_consensus_key_bytes = authority_keypair.public().to_bytes();
+        let expected_compressed: Vec<u8> = if expected_consensus_key_bytes.len() >= 48 {
+            expected_consensus_key_bytes[..48].to_vec()
+        } else {
+            expected_consensus_key_bytes.to_vec()
+        };
+        let expected_consensus_key = hex::encode(&expected_compressed);
         assert_eq!(
             genesis_config.consensus_public_keys[0], expected_consensus_key,
-            "Consensus public key should match provided authority key"
+            "Consensus public key should match provided authority key (compressed format)"
         );
 
-        // Verify network address contains the correct network public key
-        let expected_network_key = hex::encode(network_keypair.public().to_bytes());
+        // Verify network address contains the Sui address derived from the network public key
+        let expected_sui_address = generate_validator_sui_address(&network_keypair.public());
         assert!(
-            genesis_config.validator_network_addresses[0].contains(&expected_network_key),
-            "Network address should contain the provided network public key"
+            genesis_config.validator_network_addresses[0].contains(&expected_sui_address),
+            "Network address should contain the Sui address derived from the network public key"
+        );
+
+        // Verify validator address is the last 20 bytes of the Sui address (Ethereum-style)
+        let expected_validator_address = format!("0x{}", &expected_sui_address[24..]);
+        assert_eq!(
+            genesis_config.validator_addresses[0], expected_validator_address,
+            "Validator address should be the last 20 bytes of the Sui address (0x + 40 hex)"
         );
     }
 }

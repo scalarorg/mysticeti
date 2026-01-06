@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use axum::http;
+use consensus_config::Authority;
 use consensus_core::CommittedSubDag;
 use jsonrpsee::ws_client::WsClientBuilder;
 use jsonrpsee_core::client::SubscriptionClientT;
@@ -15,6 +16,7 @@ use crate::evm::create_evm_committed_subdag;
 type RawTransactions = Vec<Vec<u8>>;
 
 pub struct RawTransactionClient {
+    authorities: Vec<Authority>,
     jwt_secret: String,
     execution_http_url: String,
     execution_ws_url: String,
@@ -23,12 +25,14 @@ pub struct RawTransactionClient {
 
 impl RawTransactionClient {
     pub fn new(
+        authorities: Vec<Authority>,
         jwt_secret: String,
         execution_http_url: String,
         execution_ws_url: String,
         tx_transactions: UnboundedSender<RawTransactions>,
     ) -> Self {
         Self {
+            authorities,
             jwt_secret,
             execution_http_url,
             execution_ws_url,
@@ -127,6 +131,7 @@ impl RawTransactionClient {
             }
         });
         let http_client = self.http_client();
+        let authorities = self.authorities.clone();
         let subdag_handler = tokio::spawn(async move {
             let mut total_committed_txs = 0;
             loop {
@@ -135,7 +140,17 @@ impl RawTransactionClient {
                     let timestamp_ms = subdag.timestamp_ms;
                     let commit_index = subdag.commit_ref.index;
                     let leader_round = subdag.leader.round;
-                    let evm_subdag = create_evm_committed_subdag(subdag);
+                    let leader_authority = authorities.get(subdag.leader.author.value());
+                    if leader_authority.is_none() {
+                        error!(
+                            "Leader authority not found with given index: {:?}",
+                            subdag.leader.author.value()
+                        );
+                        continue;
+                    }
+                    let leader_authority = leader_authority.unwrap();
+
+                    let evm_subdag = create_evm_committed_subdag(subdag, Some(leader_authority));
                     let current_len = evm_subdag.len();
                     total_committed_txs += current_len;
                     if let Err(e) = MysticetiConsensusApiClient::submit_committed_subdag(

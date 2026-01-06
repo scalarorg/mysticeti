@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use consensus_config::Parameters;
+use consensus_config::{Authority, Parameters};
 use consensus_core::CommitConsumerArgs;
 use execute::{
     evm::{
@@ -130,6 +130,10 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     // Load committee configuration from file
     let committee_path = PathBuf::from(&node_config.committee_path);
     let (committee, keypairs) = load_committees(&committee_path)?;
+    let authorities: Vec<Authority> = committee
+        .authorities()
+        .map(|(_, authority)| authority.clone())
+        .collect();
     node_config.peer_addresses = extract_peer_addresses(&committee);
     // Initialize tracing
     let log_level = match node_config.log_level.as_str() {
@@ -183,6 +187,7 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
 
     // Create and start the Engine API client
     let mut client = RawTransactionClient::new(
+        authorities,
         node_config.jwt_secret,
         node_config.execution_http_url,
         node_config.execution_ws_url,

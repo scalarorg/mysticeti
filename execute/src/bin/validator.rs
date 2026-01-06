@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use clap::{Parser, command};
-use execute::validator::ValidatorNode;
 use eyre::Result;
-use mysten_metrics::RegistryService;
-use prometheus::Registry;
 use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::filter::LevelFilter;
