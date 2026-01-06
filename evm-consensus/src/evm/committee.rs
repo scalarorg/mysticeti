@@ -18,8 +18,8 @@ pub struct CommitteeConfig {
     pub epoch: u64,
     pub authorities: Vec<AuthorityConfig>,
     pub docker_network: NetworkConfig,
-    pub quorum_threshold: usize,
-    pub validity_threshold: usize,
+    pub quorum_threshold: u64,
+    pub validity_threshold: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -348,6 +348,10 @@ fn generate_committee_from_validator_configs(
     }
 
     let num_authorities = authorities_config.len();
+    let total_stake: u64 = authorities_config.iter().map(|a| a.stake).sum();
+    assert_ne!(total_stake, 0, "Total stake cannot be zero!");
+    let quorum_threshold = 2 * total_stake / 3 + 1;
+    let validity_threshold = total_stake.div_ceil(3);
     let committee_config = CommitteeConfig {
         epoch,
         authorities: authorities_config,
@@ -357,8 +361,8 @@ fn generate_committee_from_validator_configs(
             end_ip: 10 + num_authorities as u8 - 1,
             port: 26657,
         },
-        quorum_threshold: (num_authorities * 2) / 3 + 1, // 2/3 + 1 for Byzantine fault tolerance
-        validity_threshold: num_authorities / 2 + 1,     // 1/2 + 1 for validity
+        quorum_threshold,
+        validity_threshold,
     };
 
     let yaml_content = serde_yaml::to_string(&committee_config)?;
