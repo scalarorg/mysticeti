@@ -11,7 +11,7 @@ use mysten_metrics::RegistryService;
 use mysten_metrics::monitored_mpsc::UnboundedReceiver;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 use sui_protocol_config::ProtocolConfig;
 use tracing::{debug, error, info};
 const BATCH_TIMEOUT_MS: u64 = 100; // Send batch after 1 second even if not full
@@ -81,7 +81,7 @@ impl ValidatorNode {
         };
         // Log the loaded parameters for debugging
         info!("Loaded consensus parameters: {:?}", parameters);
-        let mut protocol_config = ProtocolConfig::get_for_max_version_UNSAFE();
+        let protocol_config = ProtocolConfig::get_for_max_version_UNSAFE();
         // Start the consensus authority
         let consensus_authority = ConsensusAuthority::start(
             NetworkType::Tonic,
@@ -193,154 +193,156 @@ impl ValidatorNode {
         }
     }
 }
+/*
+ * RPC server is not used in this implementation, but it can be added back in the future.
+ */
+// impl ValidatorNode {
+//     async fn start_rpc_server(
+//         &self,
+//         rpc_port: u16,
+//     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+//         info!("Starting RPC server on port {}", rpc_port);
 
-impl ValidatorNode {
-    async fn start_rpc_server(
-        &self,
-        rpc_port: u16,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting RPC server on port {}", rpc_port);
+//         // Create a channel to forward transactions from RPC to ABCI
+//         let (rpc_tx_sender, mut rpc_tx_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1000);
+//         let transaction_client = self
+//             .consensus_authority
+//             .as_ref()
+//             .unwrap()
+//             .transaction_client();
 
-        // Create a channel to forward transactions from RPC to ABCI
-        let (rpc_tx_sender, mut rpc_tx_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(1000);
-        let transaction_client = self
-            .consensus_authority
-            .as_ref()
-            .unwrap()
-            .transaction_client();
+//         // Start transaction forwarding from RPC to consensus
+//         tokio::spawn(async move {
+//             while let Some(tx_data) = rpc_tx_receiver.recv().await {
+//                 info!(
+//                     "Forwarding transaction from RPC to consensus: {} bytes",
+//                     tx_data.len()
+//                 );
+//                 // Forward to Mysticeti consensus
+//                 // Submit transaction to Mysticeti consensus authority using the transaction client
+//                 match transaction_client.submit(vec![tx_data]).await {
+//                     Ok((block_ref, _transaction_indices, _status_receiver)) => {
+//                         info!(
+//                             "Transaction submitted successfully to Mysticeti consensus, included in block: {:?}",
+//                             block_ref
+//                         );
+//                     }
+//                     Err(e) => {
+//                         error!("Failed to submit transaction to Mysticeti consensus: {}", e);
+//                     }
+//                 }
+//             }
+//         });
 
-        // Start transaction forwarding from RPC to consensus
-        tokio::spawn(async move {
-            while let Some(tx_data) = rpc_tx_receiver.recv().await {
-                info!(
-                    "Forwarding transaction from RPC to consensus: {} bytes",
-                    tx_data.len()
-                );
-                // Forward to Mysticeti consensus
-                // Submit transaction to Mysticeti consensus authority using the transaction client
-                match transaction_client.submit(vec![tx_data]).await {
-                    Ok((block_ref, _transaction_indices, _status_receiver)) => {
-                        info!(
-                            "Transaction submitted successfully to Mysticeti consensus, included in block: {:?}",
-                            block_ref
-                        );
-                    }
-                    Err(e) => {
-                        error!("Failed to submit transaction to Mysticeti consensus: {}", e);
-                    }
-                }
-            }
-        });
+//         let addr: SocketAddr = format!("0.0.0.0:{}", rpc_port).parse()?;
 
-        let addr: SocketAddr = format!("0.0.0.0:{}", rpc_port).parse()?;
+//         tokio::spawn(async move {
+//             use axum::{
+//                 Json, Router,
+//                 http::StatusCode,
+//                 routing::{get, post},
+//             };
+//             use serde::{Deserialize, Serialize};
 
-        tokio::spawn(async move {
-            use axum::{
-                Json, Router,
-                http::StatusCode,
-                routing::{get, post},
-            };
-            use serde::{Deserialize, Serialize};
+//             #[derive(Deserialize)]
+//             struct TransactionRequest {
+//                 transaction: String, // Base64 encoded transaction
+//             }
 
-            #[derive(Deserialize)]
-            struct TransactionRequest {
-                transaction: String, // Base64 encoded transaction
-            }
+//             #[derive(Serialize)]
+//             struct TransactionResponse {
+//                 success: bool,
+//                 message: String,
+//             }
 
-            #[derive(Serialize)]
-            struct TransactionResponse {
-                success: bool,
-                message: String,
-            }
+//             #[derive(Serialize)]
+//             struct StatusResponse {
+//                 node_info: &'static str,
+//                 abci_app_version: &'static str,
+//             }
 
-            #[derive(Serialize)]
-            struct StatusResponse {
-                node_info: &'static str,
-                abci_app_version: &'static str,
-            }
+//             #[derive(Deserialize)]
+//             struct AbciQueryRequest {}
 
-            #[derive(Deserialize)]
-            struct AbciQueryRequest {}
+//             #[derive(Serialize)]
+//             struct AbciQueryResponse {
+//                 code: u32,
+//                 value: String,
+//             }
 
-            #[derive(Serialize)]
-            struct AbciQueryResponse {
-                code: u32,
-                value: String,
-            }
+//             let app = Router::new()
+//                 .route(
+//                     "/broadcast_tx_async",
+//                     post(|Json(payload): Json<TransactionRequest>| async move {
+//                         match base64::Engine::decode(
+//                             &base64::engine::general_purpose::STANDARD,
+//                             &payload.transaction,
+//                         ) {
+//                             Ok(tx_data) => {
+//                                 if let Err(e) = rpc_tx_sender.send(tx_data).await {
+//                                     error!("Failed to forward transaction to ABCI: {}", e);
+//                                     return (
+//                                         StatusCode::INTERNAL_SERVER_ERROR,
+//                                         Json(TransactionResponse {
+//                                             success: false,
+//                                             message: "Failed to process transaction".to_string(),
+//                                         }),
+//                                     );
+//                                 }
+//                                 (
+//                                     StatusCode::OK,
+//                                     Json(TransactionResponse {
+//                                         success: true,
+//                                         message: "Transaction accepted and forwarded to ABCI"
+//                                             .to_string(),
+//                                     }),
+//                                 )
+//                             }
+//                             Err(e) => {
+//                                 error!("Failed to decode transaction: {}", e);
+//                                 (
+//                                     StatusCode::BAD_REQUEST,
+//                                     Json(TransactionResponse {
+//                                         success: false,
+//                                         message: "Invalid transaction format".to_string(),
+//                                     }),
+//                                 )
+//                             }
+//                         }
+//                     }),
+//                 )
+//                 .route(
+//                     "/status",
+//                     get(|| async move {
+//                         (
+//                             StatusCode::OK,
+//                             Json(StatusResponse {
+//                                 node_info: "Mysticeti Validator Node",
+//                                 abci_app_version: "0.1.0",
+//                             }),
+//                         )
+//                     }),
+//                 )
+//                 .route(
+//                     "/abci_query",
+//                     post(|Json(_payload): Json<AbciQueryRequest>| async move {
+//                         // For now, just return a stub
+//                         (
+//                             StatusCode::OK,
+//                             Json(AbciQueryResponse {
+//                                 code: 0,
+//                                 value: "Mysticeti query stub".to_string(),
+//                             }),
+//                         )
+//                     }),
+//                 )
+//                 .route("/health", get(|| async { "OK" }));
 
-            let app = Router::new()
-                .route(
-                    "/broadcast_tx_async",
-                    post(|Json(payload): Json<TransactionRequest>| async move {
-                        match base64::Engine::decode(
-                            &base64::engine::general_purpose::STANDARD,
-                            &payload.transaction,
-                        ) {
-                            Ok(tx_data) => {
-                                if let Err(e) = rpc_tx_sender.send(tx_data).await {
-                                    error!("Failed to forward transaction to ABCI: {}", e);
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(TransactionResponse {
-                                            success: false,
-                                            message: "Failed to process transaction".to_string(),
-                                        }),
-                                    );
-                                }
-                                (
-                                    StatusCode::OK,
-                                    Json(TransactionResponse {
-                                        success: true,
-                                        message: "Transaction accepted and forwarded to ABCI"
-                                            .to_string(),
-                                    }),
-                                )
-                            }
-                            Err(e) => {
-                                error!("Failed to decode transaction: {}", e);
-                                (
-                                    StatusCode::BAD_REQUEST,
-                                    Json(TransactionResponse {
-                                        success: false,
-                                        message: "Invalid transaction format".to_string(),
-                                    }),
-                                )
-                            }
-                        }
-                    }),
-                )
-                .route(
-                    "/status",
-                    get(|| async move {
-                        (
-                            StatusCode::OK,
-                            Json(StatusResponse {
-                                node_info: "Mysticeti Validator Node",
-                                abci_app_version: "0.1.0",
-                            }),
-                        )
-                    }),
-                )
-                .route(
-                    "/abci_query",
-                    post(|Json(_payload): Json<AbciQueryRequest>| async move {
-                        // For now, just return a stub
-                        (
-                            StatusCode::OK,
-                            Json(AbciQueryResponse {
-                                code: 0,
-                                value: "Mysticeti query stub".to_string(),
-                            }),
-                        )
-                    }),
-                )
-                .route("/health", get(|| async { "OK" }));
+//             info!("RPC server listening on {}", addr);
+//             let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+//             axum::serve(listener, app).await.unwrap();
+//         });
 
-            info!("RPC server listening on {}", addr);
-            let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

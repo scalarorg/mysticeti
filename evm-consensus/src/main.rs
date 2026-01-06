@@ -1,4 +1,4 @@
-#![warn(unused_crate_dependencies)]
+// #![warn(unused_crate_dependencies)]
 
 use std::fs;
 use std::path::PathBuf;
@@ -7,13 +7,11 @@ use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use consensus_config::{Authority, Parameters};
 use consensus_core::CommitConsumerArgs;
-use execute::{
-    evm::{
-        RawTransactionClient, extract_peer_addresses, generate_committees, generate_genesis_config,
-        generate_validators, load_committees,
-    },
-    validator::ValidatorNode,
+use evm_consensus::evm::{
+    RawTransactionClient, extract_peer_addresses, generate_committees, generate_genesis_config,
+    generate_validators, load_committees,
 };
+use execute::validator::ValidatorNode;
 use mysten_metrics::{RegistryService, monitored_mpsc::unbounded_channel};
 use prometheus::Registry;
 use serde::{Deserialize, Serialize};
