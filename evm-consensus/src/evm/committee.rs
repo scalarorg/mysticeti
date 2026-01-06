@@ -1744,7 +1744,8 @@ mod tests {
         let genesis_config: GenesisConfig = serde_json::from_str(&file_content).unwrap();
 
         // Verify the consensus public key matches the provided authority key (compressed format: 48 bytes)
-        let expected_consensus_key_bytes = authority_keypair.public().to_bytes();
+        let public_key = authority_keypair.public();
+        let expected_consensus_key_bytes = public_key.to_bytes();
         let expected_compressed: Vec<u8> = if expected_consensus_key_bytes.len() >= 48 {
             expected_consensus_key_bytes[..48].to_vec()
         } else {

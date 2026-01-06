@@ -826,4 +826,386 @@ nested:
         assert!(result.is_ok());
         assert!(committee_path.exists());
     }
+
+    #[test]
+    fn test_create_evm_consensus_full_workflow() {
+        use tempfile::tempdir;
+
+        // Test the complete workflow: generate validators -> generate committee -> generate genesis
+        let temp_dir = tempdir().unwrap();
+        let validators_path = temp_dir.path().join("validators.yml");
+        let committee_path = temp_dir.path().join("committees.yml");
+        let genesis_path = temp_dir.path().join("genesis.json");
+
+        let authorities = 4;
+        let epoch = 0;
+        let stake = 1000;
+        let ip_addresses = vec![
+            "127.0.0.1".to_string(),
+            "127.0.0.1".to_string(),
+            "127.0.0.1".to_string(),
+            "127.0.0.1".to_string(),
+        ];
+        let network_ports = vec![26657, 26658, 26659, 26660];
+        let hostname_prefix = "fastevm-consensus";
+
+        // Step 1: Generate validators
+        let result = generate_validators(
+            &validators_path,
+            authorities,
+            epoch,
+            stake,
+            &ip_addresses,
+            &network_ports,
+            hostname_prefix,
+        );
+        assert!(result.is_ok(), "generate_validators should succeed");
+        assert!(
+            validators_path.exists(),
+            "Validators file should be created"
+        );
+
+        // Step 2: Generate committee from validators
+        let result = generate_committees(&validators_path, &committee_path, Some(epoch));
+        assert!(result.is_ok(), "generate_committees should succeed");
+        assert!(committee_path.exists(), "Committee file should be created");
+
+        // Step 3: Generate genesis config from validators
+        let result = generate_genesis_config(&validators_path, &genesis_path);
+        assert!(result.is_ok(), "generate_genesis_config should succeed");
+        assert!(genesis_path.exists(), "Genesis file should be created");
+
+        // Verify all files can be loaded
+        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+        assert_eq!(committee.size(), authorities);
+        assert_eq!(keypairs.len(), authorities);
+
+        // Verify genesis config can be loaded
+        let genesis_content = fs::read_to_string(&genesis_path).unwrap();
+        let genesis_config: serde_json::Value = serde_json::from_str(&genesis_content).unwrap();
+        assert_eq!(
+            genesis_config["validatorAddresses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            authorities
+        );
+        assert_eq!(
+            genesis_config["consensusPublicKeys"]
+                .as_array()
+                .unwrap()
+                .len(),
+            authorities
+        );
+    }
+
+    #[test]
+    fn test_create_evm_consensus_with_different_configurations() {
+        use tempfile::tempdir;
+
+        // Test with different numbers of authorities
+        let test_cases = vec![
+            (1, 1, 1000),  // Single authority
+            (3, 0, 5000),  // Three authorities, different epoch and stake
+            (7, 10, 2000), // Seven authorities
+        ];
+
+        for (authorities, epoch, stake) in test_cases {
+            let temp_dir = tempdir().unwrap();
+            let validators_path = temp_dir.path().join("validators.yml");
+            let committee_path = temp_dir.path().join("committees.yml");
+            let genesis_path = temp_dir.path().join("genesis.json");
+
+            let ip_addresses: Vec<String> = (0..authorities)
+                .map(|i| format!("127.0.0.{}", i + 1))
+                .collect();
+            let network_ports: Vec<u16> = (0..authorities).map(|i| 26657 + i as u16).collect();
+
+            // Generate validators
+            let result = generate_validators(
+                &validators_path,
+                authorities,
+                epoch,
+                stake,
+                &ip_addresses,
+                &network_ports,
+                "test-node",
+            );
+            assert!(
+                result.is_ok(),
+                "generate_validators should succeed for {} authorities",
+                authorities
+            );
+
+            // Generate committee
+            let result = generate_committees(&validators_path, &committee_path, Some(epoch));
+            assert!(
+                result.is_ok(),
+                "generate_committees should succeed for {} authorities",
+                authorities
+            );
+
+            // Generate genesis
+            let result = generate_genesis_config(&validators_path, &genesis_path);
+            assert!(
+                result.is_ok(),
+                "generate_genesis_config should succeed for {} authorities",
+                authorities
+            );
+
+            // Verify committee thresholds
+            let (committee, _) = load_committees(&committee_path).unwrap();
+            assert_eq!(committee.size(), authorities);
+            assert_eq!(committee.epoch(), epoch);
+        }
+    }
+
+    #[test]
+    fn test_create_evm_consensus_error_handling() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let validators_path = temp_dir.path().join("validators.yml");
+        let committee_path = temp_dir.path().join("committees.yml");
+        let genesis_path = temp_dir.path().join("genesis.json");
+
+        // Test: Generate validators with insufficient IPs
+        let result = generate_validators(
+            &validators_path,
+            5, // 5 authorities
+            0,
+            1000,
+            &vec!["127.0.0.1".to_string(); 3], // Only 3 IPs
+            &vec![26657, 26658, 26659, 26660, 26661],
+            "test",
+        );
+        assert!(result.is_err(), "Should fail with insufficient IPs");
+
+        // Test: Generate validators with insufficient ports
+        let result = generate_validators(
+            &validators_path,
+            5, // 5 authorities
+            0,
+            1000,
+            &vec!["127.0.0.1".to_string(); 5],
+            &vec![26657, 26658, 26659], // Only 3 ports
+            "test",
+        );
+        assert!(result.is_err(), "Should fail with insufficient ports");
+
+        // Test: Generate committee from non-existent validators file
+        let result = generate_committees(&validators_path, &committee_path, None);
+        assert!(
+            result.is_err(),
+            "Should fail when validators file doesn't exist"
+        );
+
+        // Test: Generate genesis from non-existent validators file
+        let result = generate_genesis_config(&validators_path, &genesis_path);
+        assert!(
+            result.is_err(),
+            "Should fail when validators file doesn't exist"
+        );
+    }
+
+    #[test]
+    fn test_create_evm_consensus_file_consistency() {
+        use tempfile::tempdir;
+
+        // Test that all generated files are consistent with each other
+        let temp_dir = tempdir().unwrap();
+        let validators_path = temp_dir.path().join("validators.yml");
+        let committee_path = temp_dir.path().join("committees.yml");
+        let genesis_path = temp_dir.path().join("genesis.json");
+
+        let authorities = 4;
+        let epoch = 5;
+        let stake = 2000;
+        let ip_addresses = vec![
+            "192.168.1.10".to_string(),
+            "192.168.1.11".to_string(),
+            "192.168.1.12".to_string(),
+            "192.168.1.13".to_string(),
+        ];
+        let network_ports = vec![2024, 2025, 2026, 2027];
+
+        // Generate all files
+        generate_validators(
+            &validators_path,
+            authorities,
+            epoch,
+            stake,
+            &ip_addresses,
+            &network_ports,
+            "consensus-node",
+        )
+        .unwrap();
+
+        generate_committees(&validators_path, &committee_path, Some(epoch)).unwrap();
+        generate_genesis_config(&validators_path, &genesis_path).unwrap();
+
+        // Load and verify consistency
+        let (committee, _) = load_committees(&committee_path).unwrap();
+        let peer_addresses = extract_peer_addresses(&committee);
+
+        // Verify committee has correct number of authorities
+        assert_eq!(committee.size(), authorities);
+        assert_eq!(committee.epoch(), epoch);
+        assert_eq!(peer_addresses.len(), authorities);
+
+        // Verify genesis config has matching number of validators
+        let genesis_content = fs::read_to_string(&genesis_path).unwrap();
+        let genesis_config: serde_json::Value = serde_json::from_str(&genesis_content).unwrap();
+        assert_eq!(
+            genesis_config["validatorAddresses"]
+                .as_array()
+                .unwrap()
+                .len(),
+            authorities
+        );
+
+        // Verify all arrays in genesis config have the same length
+        let validator_addresses = genesis_config["validatorAddresses"].as_array().unwrap();
+        let consensus_keys = genesis_config["consensusPublicKeys"].as_array().unwrap();
+        let voting_powers = genesis_config["votingPowers"].as_array().unwrap();
+        let network_addresses = genesis_config["validatorNetworkAddresses"]
+            .as_array()
+            .unwrap();
+
+        assert_eq!(validator_addresses.len(), consensus_keys.len());
+        assert_eq!(consensus_keys.len(), voting_powers.len());
+        assert_eq!(voting_powers.len(), network_addresses.len());
+
+        // Verify voting powers match stake
+        for voting_power in voting_powers {
+            assert_eq!(voting_power.as_str().unwrap(), stake.to_string());
+        }
+    }
+
+    #[test]
+    fn test_create_evm_consensus_with_custom_keys() {
+        use consensus_config::AuthorityKeyPair;
+        use fastcrypto::{bls12381, ed25519, traits::KeyPair};
+        use rand::{SeedableRng, rngs::StdRng};
+        use tempfile::tempdir;
+
+        // Test creating evm-consensus with pre-generated keys
+        let temp_dir = tempdir().unwrap();
+        let validators_path = temp_dir.path().join("validators.yml");
+        let committee_path = temp_dir.path().join("committees.yml");
+        let genesis_path = temp_dir.path().join("genesis.json");
+
+        let mut rng = StdRng::from_seed([42; 32]);
+
+        // Generate keys manually
+        let bls_keypair = bls12381::min_sig::BLS12381KeyPair::generate(&mut rng);
+        let bls_private_key = bls_keypair.copy().private();
+        let authority_private_key_bytes = bls_private_key.privkey.to_bytes();
+        let authority_private_key_hex = hex::encode(&authority_private_key_bytes);
+
+        let ed25519_protocol_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
+        let protocol_private_key_bytes = ed25519_protocol_keypair.copy().private().0.to_bytes();
+        let protocol_private_key_hex = hex::encode(protocol_private_key_bytes);
+
+        let ed25519_network_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
+        let network_private_key_bytes = ed25519_network_keypair.copy().private().0.to_bytes();
+        let network_private_key_hex = hex::encode(network_private_key_bytes);
+
+        // Create validator config with custom keys
+        let validator_configs = evm_consensus::evm::ValidatorConfigs {
+            validators: vec![evm_consensus::evm::ValidatorConfig {
+                hostname: "custom-node-0".to_string(),
+                ip_address: "10.0.0.1".to_string(),
+                port: 3000,
+                stake: 5000,
+                authority_private_key: Some(authority_private_key_hex.clone()),
+                protocol_private_key: Some(protocol_private_key_hex.clone()),
+                network_private_key: Some(network_private_key_hex.clone()),
+            }],
+            epoch: Some(1),
+        };
+
+        let yaml_content = serde_yaml::to_string(&validator_configs).unwrap();
+        fs::write(&validators_path, yaml_content).unwrap();
+
+        // Generate committee and genesis using the custom keys
+        generate_committees(&validators_path, &committee_path, None).unwrap();
+        generate_genesis_config(&validators_path, &genesis_path).unwrap();
+
+        // Verify files were created
+        assert!(committee_path.exists());
+        assert!(genesis_path.exists());
+
+        // Verify genesis config uses the custom keys
+        let genesis_content = fs::read_to_string(&genesis_path).unwrap();
+        let genesis_config: serde_json::Value = serde_json::from_str(&genesis_content).unwrap();
+
+        // The consensus public key should match the authority keypair we generated
+        let authority_keypair = AuthorityKeyPair::new(bls_keypair);
+        let public_key = authority_keypair.public();
+        let expected_consensus_key_bytes = public_key.to_bytes();
+        let expected_compressed: Vec<u8> = if expected_consensus_key_bytes.len() >= 48 {
+            expected_consensus_key_bytes[..48].to_vec()
+        } else {
+            expected_consensus_key_bytes.to_vec()
+        };
+        let expected_consensus_key = hex::encode(&expected_compressed);
+
+        let actual_consensus_key = genesis_config["consensusPublicKeys"][0].as_str().unwrap();
+        assert_eq!(actual_consensus_key, expected_consensus_key);
+    }
+
+    #[test]
+    fn test_create_evm_consensus_round_trip() {
+        use tempfile::tempdir;
+
+        // Test that we can generate configs, load them, and use them
+        let temp_dir = tempdir().unwrap();
+        let validators_path = temp_dir.path().join("validators.yml");
+        let committee_path = temp_dir.path().join("committees.yml");
+
+        let authorities = 3;
+        let epoch = 2;
+        let stake = 3000;
+        let ip_addresses = vec![
+            "172.16.0.1".to_string(),
+            "172.16.0.2".to_string(),
+            "172.16.0.3".to_string(),
+        ];
+        let network_ports = vec![4000, 4001, 4002];
+
+        // Generate validators and committee
+        generate_validators(
+            &validators_path,
+            authorities,
+            epoch,
+            stake,
+            &ip_addresses,
+            &network_ports,
+            "roundtrip-node",
+        )
+        .unwrap();
+
+        generate_committees(&validators_path, &committee_path, Some(epoch)).unwrap();
+
+        // Load the committee
+        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+
+        // Verify we can extract peer addresses
+        let peer_addresses = extract_peer_addresses(&committee);
+        assert_eq!(peer_addresses.len(), authorities);
+
+        // Verify keypairs match authorities
+        assert_eq!(keypairs.len(), authorities);
+
+        // Verify committee properties
+        assert_eq!(committee.size(), authorities);
+        assert_eq!(committee.epoch(), epoch);
+
+        // Verify each authority has correct properties
+        for (i, (_, authority)) in committee.authorities().enumerate() {
+            assert_eq!(u64::from(authority.stake), stake);
+            assert!(authority.hostname.contains(&i.to_string()));
+        }
+    }
 }
