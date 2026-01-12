@@ -245,7 +245,7 @@ mod tests {
     fn test_create_evm_committed_subdag_different_transactions_different_digests() {
         let block1 = create_test_block(5, 0, vec![ConsensusTransaction::new(vec![1, 2, 3])]);
         let block2 = create_test_block(5, 1, vec![ConsensusTransaction::new(vec![4, 5, 6])]);
-        let leader_ref = block1.reference();
+        let _leader_ref = block1.reference();
         let subdag = create_test_committed_subdag(5, 0, vec![block1, block2], 7000, 7);
 
         let evm_subdag = create_evm_committed_subdag(subdag, None);
@@ -273,7 +273,7 @@ mod tests {
     fn test_create_evm_committed_subdag_large_transaction_data() {
         let large_data: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
         let block = create_test_block(7, 0, vec![ConsensusTransaction::new(large_data.clone())]);
-        let leader_ref = block.reference();
+        let _leader_ref = block.reference();
         let subdag = create_test_committed_subdag(7, 0, vec![block], 9000, 8);
 
         let evm_subdag = create_evm_committed_subdag(subdag, None);

@@ -9,8 +9,10 @@ use consensus_config::{Authority, Parameters};
 use consensus_core::CommitConsumerArgs;
 use evm_consensus::evm::{
     RawTransactionClient, extract_peer_addresses, generate_committees, generate_genesis_config,
-    generate_validators, load_committees,
+    load_committees,
 };
+
+use evm_consensus::{generate_validator, generate_validators, load_validator};
 use execute::validator::ValidatorNode;
 use mysten_metrics::{RegistryService, monitored_mpsc::unbounded_channel};
 use prometheus::Registry;
@@ -19,10 +21,10 @@ use serde_yaml;
 use tokio::signal;
 use tracing::{Level, error, info};
 use tracing_subscriber;
-
 #[derive(Default, Serialize, Deserialize)]
 struct NodeConfig {
     chain: String, // Can be predefined name (mainnet, sepolia, holesky, hoodi, dev) or path to custom genesis
+    validator_path: String,
     committee_path: String,
     parameters_path: String, // Path to consensus parameters YAML file
     execution_http_url: String,
@@ -109,7 +111,20 @@ enum Commands {
         #[arg(short, long)]
         epoch: Option<u64>,
     },
-
+    GenerateValidator {
+        #[arg(short, long, default_value = "validator.yml")]
+        output: PathBuf,
+        #[arg(short, long, default_value = "network_public_key.txt")]
+        network_key_path: PathBuf,
+        #[arg(short, long, default_value = "1")]
+        stake: u64,
+        #[arg(short, long, default_value = "hostname")]
+        hostname: String,
+        #[arg(short, long, default_value = "ip_address")]
+        ip_address: String,
+        #[arg(short, long, default_value = "port")]
+        port: u16,
+    },
     /// Start the consensus node
     Start {
         /// Path to committee configuration file
@@ -125,9 +140,12 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     let mut node_config: NodeConfig = serde_yaml::from_str(&config_content)?;
     let content = std::fs::read_to_string(&node_config.parameters_path)?;
     let parameters: Parameters = serde_yaml::from_str(&content)?;
+    // Load validator configuration from file
+    let validator_path = PathBuf::from(&node_config.validator_path);
+    let validator_config = load_validator(&validator_path)?;
     // Load committee configuration from file
     let committee_path = PathBuf::from(&node_config.committee_path);
-    let (committee, keypairs) = load_committees(&committee_path)?;
+    let committee = load_committees(&committee_path)?;
     let authorities: Vec<Authority> = committee
         .authorities()
         .map(|(_, authority)| authority.clone())
@@ -170,12 +188,19 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     // Create channels for exchange block between engine client and consensus process
     // Create commit consumer
     let (commit_consumer, commit_receiver, _block_receiver) = CommitConsumerArgs::new(0, 0);
+    let network_keypair = validator_config
+        .network_keypair()
+        .map_err(|e| anyhow!("Failed to create network keypair: {}", e))?;
+    let protocol_keypair = validator_config
+        .protocol_keypair()
+        .map_err(|e| anyhow!("Failed to create protocol keypair: {}", e))?;
     // Start the validator node
     validator
         .start(
+            network_keypair,
+            protocol_keypair,
             committee,
             parameters,
-            keypairs,
             registry_service,
             commit_consumer,
             rx_transactions,
@@ -234,6 +259,24 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
+        Commands::GenerateValidator {
+            output,
+            network_key_path,
+            hostname,
+            ip_address,
+            port,
+            stake,
+        } => {
+            generate_validator(
+                &output,
+                &network_key_path,
+                hostname,
+                ip_address,
+                port,
+                stake,
+            )
+            .map_err(|e| anyhow!("Failed to generate validator config: {}", e))?;
+        }
         Commands::GenerateValidators {
             output,
             authorities,
@@ -882,9 +925,8 @@ nested:
         assert!(genesis_path.exists(), "Genesis file should be created");
 
         // Verify all files can be loaded
-        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
         assert_eq!(committee.size(), authorities);
-        assert_eq!(keypairs.len(), authorities);
 
         // Verify genesis config can be loaded
         let genesis_content = fs::read_to_string(&genesis_path).unwrap();
@@ -960,7 +1002,7 @@ nested:
             );
 
             // Verify committee thresholds
-            let (committee, _) = load_committees(&committee_path).unwrap();
+            let committee = load_committees(&committee_path).unwrap();
             assert_eq!(committee.size(), authorities);
             assert_eq!(committee.epoch(), epoch);
         }
@@ -1051,7 +1093,7 @@ nested:
         generate_genesis_config(&validators_path, &genesis_path).unwrap();
 
         // Load and verify consistency
-        let (committee, _) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
         let peer_addresses = extract_peer_addresses(&committee);
 
         // Verify committee has correct number of authorities
@@ -1195,7 +1237,7 @@ nested:
         generate_committees(&validators_path, &committee_path, Some(epoch)).unwrap();
 
         // Load the committee
-        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
 
         // Verify we can extract peer addresses
         let peer_addresses = extract_peer_addresses(&committee);

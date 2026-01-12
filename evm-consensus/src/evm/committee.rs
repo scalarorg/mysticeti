@@ -1,17 +1,22 @@
+use crate::{ValidatorConfig, generate_validators};
 use anyhow::Result;
 use consensus_config::{
-    Authority, AuthorityKeyPair, Committee, NetworkKeyPair, NetworkPublicKey, ProtocolKeyPair,
+    Authority, AuthorityPublicKey, Committee, NetworkPublicKey, ProtocolPublicKey,
 };
 use fastcrypto::{
     bls12381, ed25519,
     hash::{Blake2b256, HashFunction},
     traits::{KeyPair as _, ToFromBytes as _},
 };
-use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
 use std::path::Path;
+
+use crate::{
+    authority_keypair_from_private_key, network_keypair_from_private_key,
+    protocol_keypair_from_private_key, validator::ValidatorConfigs,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {
@@ -41,199 +46,7 @@ pub struct NetworkConfig {
     pub port: u16,
 }
 
-/// Input configuration for validators
-/// This struct represents the input file format for validators
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ValidatorConfigs {
-    pub validators: Vec<ValidatorConfig>,
-    pub epoch: Option<u64>,
-}
-
-/// Individual validator input configuration
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ValidatorConfig {
-    pub hostname: String,
-    pub ip_address: String,
-    pub port: u16,
-    pub stake: u64,
-    /// Hex-encoded authority private key (BLS12381). If not provided, will be generated randomly.
-    #[serde(default)]
-    pub authority_private_key: Option<String>,
-    /// Hex-encoded protocol private key (Ed25519). If not provided, will be generated randomly.
-    #[serde(default)]
-    pub protocol_private_key: Option<String>,
-    /// Hex-encoded network private key (Ed25519). If not provided, will be generated randomly.
-    #[serde(default)]
-    pub network_private_key: Option<String>,
-}
-
-/// Helper function to create an AuthorityKeyPair from hex-encoded private key bytes
-fn authority_keypair_from_private_key(private_key_hex: &str) -> Result<AuthorityKeyPair> {
-    // Decode hex string to bytes
-    let private_key_bytes = hex::decode(private_key_hex)
-        .map_err(|e| anyhow::anyhow!("Failed to decode authority private key from hex: {}", e))?;
-
-    // Use BLS12381KeyPair::from_bytes which takes private key bytes and creates the keypair
-    let bls_keypair =
-        bls12381::min_sig::BLS12381KeyPair::from_bytes(&private_key_bytes).map_err(|e| {
-            anyhow::anyhow!("Failed to create BLS keypair from private key bytes: {}", e)
-        })?;
-
-    // Use AuthorityKeyPair::new which accepts bls12381::min_sig::BLS12381KeyPair
-    Ok(AuthorityKeyPair::new(bls_keypair))
-}
-
-/// Helper function to create a ProtocolKeyPair from hex-encoded private key bytes
-fn protocol_keypair_from_private_key(private_key_hex: &str) -> Result<ProtocolKeyPair> {
-    // Decode hex string to bytes
-    let private_key_bytes = hex::decode(private_key_hex)
-        .map_err(|e| anyhow::anyhow!("Failed to decode protocol private key from hex: {}", e))?;
-
-    // For Ed25519, the private key is 32 bytes
-    if private_key_bytes.len() != 32 {
-        return Err(anyhow::anyhow!(
-            "Protocol private key must be 32 bytes (64 hex chars), got {} bytes",
-            private_key_bytes.len()
-        ));
-    }
-
-    // Convert to fixed-size array
-    let mut key_bytes = [0u8; 32];
-    key_bytes.copy_from_slice(&private_key_bytes);
-
-    // Use Ed25519KeyPair::from_bytes which takes private key bytes and creates the keypair
-    let ed25519_keypair = ed25519::Ed25519KeyPair::from_bytes(&key_bytes).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to create Ed25519 keypair from private key bytes: {}",
-            e
-        )
-    })?;
-
-    // Use ProtocolKeyPair::new which accepts ed25519::Ed25519KeyPair
-    Ok(ProtocolKeyPair::new(ed25519_keypair))
-}
-
-/// Helper function to create a NetworkKeyPair from hex-encoded private key bytes
-fn network_keypair_from_private_key(private_key_hex: &str) -> Result<NetworkKeyPair> {
-    // Decode hex string to bytes
-    let private_key_bytes = hex::decode(private_key_hex)
-        .map_err(|e| anyhow::anyhow!("Failed to decode network private key from hex: {}", e))?;
-
-    // For Ed25519, the private key is 32 bytes
-    if private_key_bytes.len() != 32 {
-        return Err(anyhow::anyhow!(
-            "Network private key must be 32 bytes (64 hex chars), got {} bytes",
-            private_key_bytes.len()
-        ));
-    }
-
-    // Convert to fixed-size array
-    let mut key_bytes = [0u8; 32];
-    key_bytes.copy_from_slice(&private_key_bytes);
-
-    // Use Ed25519KeyPair::from_bytes which takes private key bytes and creates the keypair
-    let ed25519_keypair = ed25519::Ed25519KeyPair::from_bytes(&key_bytes).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to create Ed25519 keypair from private key bytes: {}",
-            e
-        )
-    })?;
-
-    // Use NetworkKeyPair::new which accepts ed25519::Ed25519KeyPair
-    Ok(NetworkKeyPair::new(ed25519_keypair))
-}
-
 // No helper functions needed - we'll generate keypairs using inner types directly
-
-/// Generates validator configurations and saves them to a YAML file
-///
-/// This function generates validator configurations based on the provided parameters
-/// and saves them to `config_path`. The generated file can then be used by
-/// `generate_committees` to create a committee configuration.
-pub fn generate_validators(
-    config_path: &Path,
-    authorities: usize,
-    epoch: u64,
-    stake: u64,
-    docker_ips: &[String],
-    network_ports: &[u16],
-    hostname_prefix: &str,
-) -> Result<()> {
-    // Ensure we don't exceed the available Docker IPs
-    if authorities > docker_ips.len() {
-        return Err(anyhow::anyhow!(
-            "Number of authorities ({}) exceeds available Docker IPs ({})",
-            authorities,
-            docker_ips.len()
-        ));
-    }
-
-    if authorities > network_ports.len() {
-        return Err(anyhow::anyhow!(
-            "Number of authorities ({}) exceeds available network ports ({})",
-            authorities,
-            network_ports.len()
-        ));
-    }
-
-    // Generate validator configs
-    let mut validator_configs = ValidatorConfigs {
-        validators: vec![],
-        epoch: Some(epoch),
-    };
-
-    let mut rng = StdRng::from_seed([0; 32]);
-
-    for i in 0..authorities {
-        // Generate keypairs using inner types so we can access private keys
-        // For AuthorityKeyPair (BLS12381)
-        let bls_keypair = bls12381::min_sig::BLS12381KeyPair::generate(&mut rng);
-        // For BLS12381, get the private key bytes from the privkey field
-        // We need to clone the keypair since private() consumes it
-        let bls_private_key = bls_keypair.copy().private();
-        // The private key has a privkey field that we can serialize
-        let authority_private_key_bytes = bls_private_key.privkey.to_bytes();
-        let authority_private_key_hex = hex::encode(&authority_private_key_bytes);
-        let authority_keypair = AuthorityKeyPair::new(bls_keypair);
-
-        // For ProtocolKeyPair (Ed25519)
-        let ed25519_protocol_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
-        let protocol_private_key_bytes = ed25519_protocol_keypair.copy().private().0.to_bytes();
-        let protocol_private_key_hex = hex::encode(protocol_private_key_bytes);
-        let protocol_keypair = ProtocolKeyPair::new(ed25519_protocol_keypair);
-
-        // For NetworkKeyPair (Ed25519)
-        let ed25519_network_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
-        let network_private_key_bytes = ed25519_network_keypair.copy().private().0.to_bytes();
-        let network_private_key_hex = hex::encode(network_private_key_bytes);
-        let network_keypair = NetworkKeyPair::new(ed25519_network_keypair);
-
-        // Store the keypairs for potential future use, but we only need the hex strings for the config
-        let _ = (authority_keypair, protocol_keypair, network_keypair);
-
-        validator_configs.validators.push(ValidatorConfig {
-            hostname: format!("{}{}", hostname_prefix, i),
-            ip_address: docker_ips[i].clone(),
-            port: network_ports[i],
-            stake,
-            authority_private_key: Some(authority_private_key_hex),
-            protocol_private_key: Some(protocol_private_key_hex),
-            network_private_key: Some(network_private_key_hex),
-        });
-    }
-
-    // Write validator configs to config_path
-    let validator_yaml = serde_yaml::to_string(&validator_configs)?;
-    fs::write(config_path, validator_yaml)?;
-
-    println!("Generated validator configs at: {}", config_path.display());
-    println!("Configuration:");
-    println!("  Epoch: {}", epoch);
-    println!("  Authorities: {}", authorities);
-    println!("  Stake per authority: {}", stake);
-
-    Ok(())
-}
 
 /// Generates a committee configuration from validator configs
 ///
@@ -312,27 +125,35 @@ fn generate_committee_from_validator_configs(
     let epoch = epoch_override.or(validator_configs.epoch).unwrap_or(0);
 
     let mut authorities_config = vec![];
-    let mut rng = StdRng::from_seed([0; 32]);
 
     for (i, validator) in validator_configs.validators.iter().enumerate() {
         // Use provided private keys or generate new ones
-        let authority_keypair = if let Some(ref priv_key) = validator.authority_private_key {
-            authority_keypair_from_private_key(priv_key)?
-        } else {
-            AuthorityKeyPair::generate(&mut rng)
-        };
 
-        let protocol_keypair = if let Some(ref priv_key) = validator.protocol_private_key {
-            protocol_keypair_from_private_key(priv_key)?
-        } else {
-            ProtocolKeyPair::generate(&mut rng)
-        };
+        let authority_keypair_hex = validator
+            .authority_private_key
+            .as_ref()
+            .expect("Authority private key is required");
 
-        let network_keypair = if let Some(ref priv_key) = validator.network_private_key {
-            network_keypair_from_private_key(priv_key)?
-        } else {
-            NetworkKeyPair::generate(&mut rng)
-        };
+        let authority_keypair =
+            authority_keypair_from_private_key(authority_keypair_hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create authority keypair from private key: {}", e)
+            })?;
+        let protocol_keypair_hex = validator
+            .protocol_private_key
+            .as_ref()
+            .expect("Protocol private key is required");
+        let protocol_keypair =
+            protocol_keypair_from_private_key(protocol_keypair_hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
+            })?;
+        let network_keypair_hex = validator
+            .network_private_key
+            .as_ref()
+            .expect("Network private key is required");
+        let network_keypair =
+            network_keypair_from_private_key(network_keypair_hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create network keypair from private key: {}", e)
+            })?;
 
         let address = format!("/ip4/{}/udp/{}", validator.ip_address, validator.port);
 
@@ -341,9 +162,9 @@ fn generate_committee_from_validator_configs(
             stake: validator.stake,
             hostname: validator.hostname.clone(),
             address,
-            authority_key: format!("{:?}", authority_keypair.public()),
-            protocol_key: format!("{:?}", protocol_keypair.public()),
-            network_key: format!("{:?}", network_keypair.public()),
+            authority_key: hex::encode(authority_keypair.public().to_bytes()),
+            protocol_key: hex::encode(protocol_keypair.public().to_bytes()),
+            network_key: hex::encode(network_keypair.public().to_bytes()),
         });
     }
 
@@ -381,22 +202,51 @@ fn generate_committee_from_validator_configs(
 }
 
 /// Loads a committee configuration from a YAML file
-pub fn load_committees(
-    config_path: &Path,
-) -> Result<(Committee, Vec<(NetworkKeyPair, ProtocolKeyPair)>)> {
+pub fn load_committees(config_path: &Path) -> Result<Committee> {
     let config_content = fs::read_to_string(config_path)?;
     let committee_config: CommitteeConfig = serde_yaml::from_str(&config_content)?;
 
     // Convert AuthorityConfig to Authority and generate keypairs
     let mut authorities = vec![];
-    let mut key_pairs = vec![];
-    let mut rng = StdRng::from_seed([0; 32]);
 
     for authority_config in committee_config.authorities {
         // Generate new keypairs (in a real scenario, you might want to load existing ones)
-        let authority_keypair = AuthorityKeyPair::generate(&mut rng);
-        let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
-        let network_keypair = NetworkKeyPair::generate(&mut rng);
+        let authority_key = hex::decode(authority_config.authority_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode authority key from hex: {}", e))
+            .and_then(|bytes| {
+                bls12381::min_sig::BLS12381PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create BLS keypair from authority key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(AuthorityPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create authority public key: {}", e))?;
+        let protocol_key = hex::decode(authority_config.protocol_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode protocol key from hex: {}", e))
+            .and_then(|bytes| {
+                ed25519::Ed25519PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create Ed25519 public key from protocol key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(ProtocolPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create protocol public key: {}", e))?;
+        let network_key = hex::decode(authority_config.network_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode network key from hex: {}", e))
+            .and_then(|bytes| {
+                ed25519::Ed25519PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create Ed25519 public key from network key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(NetworkPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create network public key: {}", e))?;
 
         // Parse the address string
         let address = authority_config.address.parse()?;
@@ -405,11 +255,10 @@ pub fn load_committees(
             stake: authority_config.stake.into(),
             address,
             hostname: authority_config.hostname,
-            authority_key: authority_keypair.public(),
-            protocol_key: protocol_keypair.public(),
-            network_key: network_keypair.public(),
+            authority_key,
+            protocol_key,
+            network_key,
         });
-        key_pairs.push((network_keypair, protocol_keypair));
     }
 
     let committee = Committee::new(committee_config.epoch, authorities);
@@ -424,7 +273,7 @@ pub fn load_committees(
         committee.epoch()
     );
 
-    Ok((committee, key_pairs))
+    Ok(committee)
 }
 
 pub fn extract_peer_addresses(committee: &Committee) -> Vec<String> {
@@ -536,22 +385,32 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
     let mut fullnode_network_addresses = vec![];
     let mut aptos_addresses = vec![];
 
-    let mut rng = StdRng::from_seed([0; 32]);
-
     for validator in &validator_configs.validators {
         // Use provided private keys or generate new ones
-        let authority_keypair = if let Some(ref priv_key) = validator.authority_private_key {
-            authority_keypair_from_private_key(priv_key)?
-        } else {
-            AuthorityKeyPair::generate(&mut rng)
-        };
-
-        let network_keypair = if let Some(ref priv_key) = validator.network_private_key {
-            network_keypair_from_private_key(priv_key)?
-        } else {
-            NetworkKeyPair::generate(&mut rng)
-        };
-
+        let authority_keypair_hex = validator
+            .authority_private_key
+            .as_ref()
+            .expect("Authority private key is required");
+        let authority_keypair =
+            authority_keypair_from_private_key(authority_keypair_hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create authority keypair from private key: {}", e)
+            })?;
+        // let protocol_keypair_hex = validator
+        //     .protocol_private_key
+        //     .as_ref()
+        //     .expect("Protocol private key is required");
+        // let protocol_keypair =
+        //     protocol_keypair_from_private_key(protocol_keypair_hex).map_err(|e| {
+        //         anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
+        //     })?;
+        let network_keypair_hex = validator
+            .network_private_key
+            .as_ref()
+            .expect("Network private key is required");
+        let network_keypair =
+            network_keypair_from_private_key(network_keypair_hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create network keypair from private key: {}", e)
+            })?;
         // Generate Sui-style address from network public key
         // Sui address = Blake2b256(Ed25519_flag || public_key_bytes)[0..32]
         let sui_address = generate_validator_sui_address(&network_keypair.public());
@@ -660,6 +519,7 @@ mod tests {
     use consensus_config::{
         Authority, AuthorityKeyPair, Committee, NetworkKeyPair, ProtocolKeyPair, Stake,
     };
+    use rand::{SeedableRng, rngs::StdRng};
 
     // Helper function to create a test committee
     fn create_test_committee() -> Committee {
@@ -974,7 +834,7 @@ mod tests {
         assert_eq!(config.docker_network.port, 26657);
 
         // Verify the file can be loaded back using load_committees
-        let (loaded_committee, _keypairs) = load_committees(&committee_path).unwrap();
+        let loaded_committee = load_committees(&committee_path).unwrap();
         assert_eq!(loaded_committee.epoch(), epoch);
         assert_eq!(loaded_committee.size(), authorities);
     }
