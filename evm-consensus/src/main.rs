@@ -127,7 +127,7 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     let parameters: Parameters = serde_yaml::from_str(&content)?;
     // Load committee configuration from file
     let committee_path = PathBuf::from(&node_config.committee_path);
-    let (committee, keypairs) = load_committees(&committee_path)?;
+    let committee = load_committees(&committee_path)?;
     let authorities: Vec<Authority> = committee
         .authorities()
         .map(|(_, authority)| authority.clone())
@@ -882,9 +882,8 @@ nested:
         assert!(genesis_path.exists(), "Genesis file should be created");
 
         // Verify all files can be loaded
-        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
         assert_eq!(committee.size(), authorities);
-        assert_eq!(keypairs.len(), authorities);
 
         // Verify genesis config can be loaded
         let genesis_content = fs::read_to_string(&genesis_path).unwrap();
@@ -960,7 +959,7 @@ nested:
             );
 
             // Verify committee thresholds
-            let (committee, _) = load_committees(&committee_path).unwrap();
+            let committee = load_committees(&committee_path).unwrap();
             assert_eq!(committee.size(), authorities);
             assert_eq!(committee.epoch(), epoch);
         }
@@ -1051,7 +1050,7 @@ nested:
         generate_genesis_config(&validators_path, &genesis_path).unwrap();
 
         // Load and verify consistency
-        let (committee, _) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
         let peer_addresses = extract_peer_addresses(&committee);
 
         // Verify committee has correct number of authorities
@@ -1195,7 +1194,7 @@ nested:
         generate_committees(&validators_path, &committee_path, Some(epoch)).unwrap();
 
         // Load the committee
-        let (committee, keypairs) = load_committees(&committee_path).unwrap();
+        let committee = load_committees(&committee_path).unwrap();
 
         // Verify we can extract peer addresses
         let peer_addresses = extract_peer_addresses(&committee);

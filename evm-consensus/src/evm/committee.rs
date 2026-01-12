@@ -1,6 +1,7 @@
 use anyhow::Result;
 use consensus_config::{
-    Authority, AuthorityKeyPair, Committee, NetworkKeyPair, NetworkPublicKey, ProtocolKeyPair,
+    Authority, AuthorityKeyPair, AuthorityPublicKey, Committee, NetworkKeyPair, NetworkPublicKey,
+    ProtocolKeyPair,
 };
 use fastcrypto::{
     bls12381, ed25519,
@@ -341,9 +342,9 @@ fn generate_committee_from_validator_configs(
             stake: validator.stake,
             hostname: validator.hostname.clone(),
             address,
-            authority_key: format!("{:?}", authority_keypair.public()),
-            protocol_key: format!("{:?}", protocol_keypair.public()),
-            network_key: format!("{:?}", network_keypair.public()),
+            authority_key: hex::encode(authority_keypair.public().to_bytes()),
+            protocol_key: hex::encode(protocol_keypair.public().to_bytes()),
+            network_key: hex::encode(network_keypair.public().to_bytes()),
         });
     }
 
@@ -381,22 +382,52 @@ fn generate_committee_from_validator_configs(
 }
 
 /// Loads a committee configuration from a YAML file
-pub fn load_committees(
-    config_path: &Path,
-) -> Result<(Committee, Vec<(NetworkKeyPair, ProtocolKeyPair)>)> {
+pub fn load_committees(config_path: &Path) -> Result<Committee> {
     let config_content = fs::read_to_string(config_path)?;
     let committee_config: CommitteeConfig = serde_yaml::from_str(&config_content)?;
 
     // Convert AuthorityConfig to Authority and generate keypairs
     let mut authorities = vec![];
-    let mut key_pairs = vec![];
     let mut rng = StdRng::from_seed([0; 32]);
 
     for authority_config in committee_config.authorities {
         // Generate new keypairs (in a real scenario, you might want to load existing ones)
-        let authority_keypair = AuthorityKeyPair::generate(&mut rng);
-        let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
-        let network_keypair = NetworkKeyPair::generate(&mut rng);
+        let authority_key = hex::decode(authority_config.authority_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode authority key from hex: {}", e))
+            .and_then(|bytes| {
+                bls12381::min_sig::BLS12381PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create BLS keypair from authority key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(AuthorityPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create authority public key: {}", e))?;
+        let protocol_key = hex::decode(authority_config.protocol_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode protocol key from hex: {}", e))
+            .and_then(|bytes| {
+                ed25519::Ed25519PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create Ed25519 public key from protocol key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(ProtocolPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create protocol public key: {}", e))?;
+        let network_key = hex::decode(authority_config.network_key)
+            .map_err(|e| anyhow::anyhow!("Failed to decode network key from hex: {}", e))
+            .and_then(|bytes| {
+                ed25519::Ed25519PublicKey::from_bytes(&bytes).map_err(|err| {
+                    anyhow::anyhow!(
+                        "Failed to create Ed25519 public key from network key bytes: {}",
+                        err
+                    )
+                })
+            })
+            .map(NetworkPublicKey::new)
+            .map_err(|e| anyhow::anyhow!("Failed to create network public key: {}", e))?;
 
         // Parse the address string
         let address = authority_config.address.parse()?;
@@ -405,11 +436,10 @@ pub fn load_committees(
             stake: authority_config.stake.into(),
             address,
             hostname: authority_config.hostname,
-            authority_key: authority_keypair.public(),
-            protocol_key: protocol_keypair.public(),
-            network_key: network_keypair.public(),
+            authority_key,
+            protocol_key,
+            network_key,
         });
-        key_pairs.push((network_keypair, protocol_keypair));
     }
 
     let committee = Committee::new(committee_config.epoch, authorities);
@@ -424,7 +454,7 @@ pub fn load_committees(
         committee.epoch()
     );
 
-    Ok((committee, key_pairs))
+    Ok(committee)
 }
 
 pub fn extract_peer_addresses(committee: &Committee) -> Vec<String> {
@@ -974,7 +1004,7 @@ mod tests {
         assert_eq!(config.docker_network.port, 26657);
 
         // Verify the file can be loaded back using load_committees
-        let (loaded_committee, _keypairs) = load_committees(&committee_path).unwrap();
+        let loaded_committee = load_committees(&committee_path).unwrap();
         assert_eq!(loaded_committee.epoch(), epoch);
         assert_eq!(loaded_committee.size(), authorities);
     }
