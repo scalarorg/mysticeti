@@ -757,8 +757,8 @@ nested:
         // Verify basic structure
         assert_eq!(config["epoch"], 0);
         assert_eq!(config["authorities"].as_sequence().unwrap().len(), 4);
-        assert_eq!(config["quorum_threshold"], 3); // (4 * 2) / 3 + 1 = 3
-        assert_eq!(config["validity_threshold"], 3); // 4 / 2 + 1 = 3
+        assert_eq!(config["quorum_threshold"], 2667); // (4 * 2) / 3 + 1 = 3
+        assert_eq!(config["validity_threshold"], 1334); // 4 / 2 + 1 = 3
 
         // Verify each authority has correct structure
         let authorities = config["authorities"].as_sequence().unwrap();

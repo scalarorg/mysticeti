@@ -943,8 +943,14 @@ mod tests {
         // Verify basic configuration
         assert_eq!(config.epoch, epoch);
         assert_eq!(config.authorities.len(), authorities);
-        assert_eq!(config.quorum_threshold, (authorities * 2) / 3 + 1); // Should be 3 for 4 authorities
-        assert_eq!(config.validity_threshold, authorities / 2 + 1); // Should be 3 for 4 authorities
+        assert_eq!(
+            config.quorum_threshold,
+            (authorities as u64 * 2 * stake) / 3 + 1
+        ); // Should be 3 for 4 authorities
+        assert_eq!(
+            config.validity_threshold,
+            (stake * authorities as u64).div_ceil(3)
+        ); // Should be 3 for 4 authorities
 
         // Verify each authority
         for (i, authority) in config.authorities.iter().enumerate() {
@@ -1266,7 +1272,9 @@ mod tests {
             ],
             epoch: Some(5),
         };
-
+        let total_stake: u64 = input_config.validators.iter().map(|a| a.stake).sum();
+        assert_ne!(total_stake, 0, "Total stake cannot be zero!");
+        let quorum_threshold = 2 * total_stake / 3 + 1;
         let input_yaml = serde_yaml::to_string(&input_config).unwrap();
         fs::write(&config_path, input_yaml).unwrap();
 
@@ -1287,8 +1295,11 @@ mod tests {
         // Verify basic configuration
         assert_eq!(committee_config.epoch, 5); // Should use epoch from input file
         assert_eq!(committee_config.authorities.len(), 3);
-        assert_eq!(committee_config.quorum_threshold, (3 * 2) / 3 + 1); // Should be 3 for 3 authorities
-        assert_eq!(committee_config.validity_threshold, 3 / 2 + 1); // Should be 2 for 3 authorities
+        assert_eq!(committee_config.quorum_threshold, quorum_threshold); // Should be 3 for 3 authorities
+        assert_eq!(
+            committee_config.validity_threshold,
+            total_stake.div_ceil(input_config.validators.len() as u64)
+        ); // Should be 2 for 3 authorities
 
         // Verify each authority matches input
         assert_eq!(committee_config.authorities[0].hostname, "validator-0");
