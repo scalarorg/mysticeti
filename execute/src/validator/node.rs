@@ -55,9 +55,10 @@ impl ValidatorNode {
 
     pub async fn start(
         &mut self,
+        network_keypair: NetworkKeyPair,
+        protocol_keypair: ProtocolKeyPair,
         committee: Committee,
         parameters: Parameters,
-        keypairs: Vec<(NetworkKeyPair, ProtocolKeyPair)>,
         registry_service: RegistryService,
         commit_consumer: CommitConsumerArgs,
         rx_transactions: UnboundedReceiver<RawTransactions>,
@@ -70,9 +71,6 @@ impl ValidatorNode {
             .join(format!("node-{}", self.authority_index));
         std::fs::create_dir_all(&node_dir)?;
         let db_path = node_dir.join("consensus.db");
-
-        // Get keypairs for this node
-        let (network_keypair, protocol_keypair) = &keypairs[self.authority_index.value()];
 
         // Create parameters
         let parameters = Parameters {
@@ -90,8 +88,8 @@ impl ValidatorNode {
             committee,
             parameters,
             protocol_config,
-            protocol_keypair.clone(),
-            network_keypair.clone(),
+            protocol_keypair,
+            network_keypair,
             Arc::new(Clock::new_for_test(0)),
             Arc::new(SimpleTransactionVerifier),
             commit_consumer,

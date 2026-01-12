@@ -56,10 +56,12 @@ impl ValidatorNetwork {
             let (_tx_sender, rx_transactions) = unbounded_channel("raw_transactions");
 
             // Start the node
+            let (network_keypair, protocol_keypair) = &keypairs[i];
             node.start(
+                network_keypair.clone(),
+                protocol_keypair.clone(),
                 committee.clone(),
                 parameters,
-                keypairs.clone(),
                 node_registry_service,
                 commit_consumer,
                 rx_transactions,
