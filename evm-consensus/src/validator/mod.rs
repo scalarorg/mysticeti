@@ -1,6 +1,6 @@
 mod config;
 use anyhow::Result;
-pub use config::{ValidatorConfig, ValidatorConfigs};
+pub use config::{AuthorityConfig, ValidatorConfig, ValidatorConfigs};
 use consensus_config::{AuthorityKeyPair, NetworkKeyPair, ProtocolKeyPair};
 use fastcrypto::{bls12381, ed25519, traits::KeyPair as _};
 use rand::SeedableRng;
@@ -8,26 +8,33 @@ use rand::rngs::StdRng;
 use serde_yaml;
 use std::fs;
 use std::path::Path;
-
+use tracing::info;
 /// Generates validator configurations and saves them to a YAML file
 ///
 /// This function generates validator configurations based on the provided parameters
 /// and saves them to `config_path`. The generated file can then be used by
 /// `generate_committees` to create a committee configuration.
 pub fn generate_validator(
-    config_path: &Path,
-    network_key_path: &Path,
+    validator_path: &Path,
+    authority_path: &Path,
     hostname: String,
     ip_address: String,
     port: u16,
     stake: u64,
 ) -> Result<()> {
-    println!("Generated validator configs at: {}", config_path.display());
-    println!("Configuration:");
-    println!("  Hostname: {}", hostname);
-    println!("  IP Address: {}", &ip_address);
-    println!("  Port: {}", port);
-    println!("  Stake per authority: {}", stake);
+    info!(
+        "Generated validator configs at: {}",
+        validator_path.display()
+    );
+    info!(
+        "Generated authority configs at: {}",
+        authority_path.display()
+    );
+    info!("Configuration:");
+    info!("  Hostname: {}", hostname);
+    info!("  IP Address: {}", &ip_address);
+    info!("  Port: {}", port);
+    info!("  Stake per authority: {}", stake);
     // Generate validator config
     let mut rng = StdRng::from_entropy();
 
@@ -40,13 +47,13 @@ pub fn generate_validator(
     // The private key has a privkey field that we can serialize
     let authority_private_key_bytes = bls_private_key.privkey.to_bytes();
     let authority_private_key_hex = hex::encode(&authority_private_key_bytes);
-    let _authority_keypair = AuthorityKeyPair::new(bls_keypair);
+    let authority_keypair = AuthorityKeyPair::new(bls_keypair);
 
     // For ProtocolKeyPair (Ed25519)
     let ed25519_protocol_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
     let protocol_private_key_bytes = ed25519_protocol_keypair.copy().private().0.to_bytes();
     let protocol_private_key_hex = hex::encode(protocol_private_key_bytes);
-    let _protocol_keypair = ProtocolKeyPair::new(ed25519_protocol_keypair);
+    let protocol_keypair = ProtocolKeyPair::new(ed25519_protocol_keypair);
 
     // For NetworkKeyPair (Ed25519)
     let ed25519_network_keypair = ed25519::Ed25519KeyPair::generate(&mut rng);
@@ -57,9 +64,9 @@ pub fn generate_validator(
     let network_public_key_hex = hex::encode(network_public_key.to_bytes());
 
     let validator_config = ValidatorConfig {
-        hostname,
-        ip_address,
-        port,
+        hostname: hostname.clone(),
+        ip_address: ip_address.clone(),
+        port: port.clone(),
         stake,
         authority_private_key: Some(authority_private_key_hex),
         protocol_private_key: Some(protocol_private_key_hex),
@@ -68,8 +75,18 @@ pub fn generate_validator(
 
     // Write validator configs to config_path
     let validator_yaml = serde_yaml::to_string(&validator_config)?;
-    fs::write(config_path, validator_yaml)?;
-    fs::write(network_key_path, network_public_key_hex)?;
+    fs::write(validator_path, validator_yaml)?;
+    let authority = AuthorityConfig {
+        index: 0,
+        stake,
+        hostname,
+        address: format!("/ip4/{}/udp/{}", ip_address, port),
+        authority_key: hex::encode(authority_keypair.public().to_bytes()),
+        protocol_key: hex::encode(protocol_keypair.public().to_bytes()),
+        network_key: network_public_key_hex,
+    };
+    let authority_yaml = serde_yaml::to_string(&authority)?;
+    fs::write(authority_path, authority_yaml)?;
 
     Ok(())
 }
@@ -171,39 +188,40 @@ pub fn generate_validators(
 }
 
 mod tests {
-    use super::*;
-
+    use crate::{generate_validator, load_validator};
+    use std::fs;
+    use std::path::Path;
     #[test]
     fn test_generate_validator() {
-        let config_path = Path::new("test_validator.yml");
-        let network_key_path = Path::new("test_network_key.txt");
+        let validator_path = Path::new("test_validator.yml");
+        let authority_path = Path::new("test_authority.yml");
         let hostname = "validator-0".to_string();
         let ip_address = "127.0.0.1".to_string();
         let port = 26657;
         let stake = 1000;
         let result = generate_validator(
-            config_path,
-            network_key_path,
+            validator_path,
+            authority_path,
             hostname.clone(),
             ip_address.clone(),
             port.clone(),
             stake.clone(),
         );
         assert!(result.is_ok());
-        assert!(config_path.exists());
-        assert!(network_key_path.exists());
+        assert!(validator_path.exists());
+        assert!(authority_path.exists());
         // ---- Read & print generated files ----
         let config_content =
-            fs::read_to_string(config_path).expect("Failed to read validator config file");
+            fs::read_to_string(validator_path).expect("Failed to read validator config file");
         let network_key_content =
-            fs::read_to_string(network_key_path).expect("Failed to read network key file");
+            fs::read_to_string(authority_path).expect("Failed to read network key file");
 
         println!("===== Validator Config (YAML) =====");
         println!("{}", config_content);
 
         println!("===== Network Key =====");
         println!("{}", network_key_content);
-        let validator_config = load_validator(config_path).unwrap();
+        let validator_config = load_validator(validator_path).unwrap();
         assert_eq!(validator_config.hostname, hostname);
         assert_eq!(validator_config.ip_address, ip_address);
         assert_eq!(validator_config.port, port);
