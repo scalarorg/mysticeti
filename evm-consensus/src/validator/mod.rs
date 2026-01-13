@@ -187,6 +187,7 @@ pub fn generate_validators(
     Ok(())
 }
 
+#[cfg(test)]
 mod tests {
     use crate::{generate_validator, load_validator};
     use std::fs;
