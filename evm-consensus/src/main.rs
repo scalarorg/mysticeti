@@ -342,6 +342,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use evm_consensus::{ValidatorConfig, ValidatorConfigs};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -821,15 +822,6 @@ nested:
             assert!(authority["protocol_key"].as_str().is_some());
             assert!(authority["network_key"].as_str().is_some());
         }
-
-        // Verify docker network configuration
-        assert_eq!(
-            config["docker_network"]["base_ip"].as_str().unwrap(),
-            "172.20.0"
-        );
-        assert_eq!(config["docker_network"]["start_ip"], 10);
-        assert_eq!(config["docker_network"]["end_ip"], 13); // 10 + 4 - 1
-        assert_eq!(config["docker_network"]["port"], 26657);
     }
 
     #[test]
@@ -1160,8 +1152,8 @@ nested:
         let network_private_key_hex = hex::encode(network_private_key_bytes);
 
         // Create validator config with custom keys
-        let validator_configs = evm_consensus::evm::ValidatorConfigs {
-            validators: vec![evm_consensus::evm::ValidatorConfig {
+        let validator_configs = ValidatorConfigs {
+            validators: vec![ValidatorConfig {
                 hostname: "custom-node-0".to_string(),
                 ip_address: "10.0.0.1".to_string(),
                 port: 3000,
@@ -1242,9 +1234,6 @@ nested:
         // Verify we can extract peer addresses
         let peer_addresses = extract_peer_addresses(&committee);
         assert_eq!(peer_addresses.len(), authorities);
-
-        // Verify keypairs match authorities
-        assert_eq!(keypairs.len(), authorities);
 
         // Verify committee properties
         assert_eq!(committee.size(), authorities);

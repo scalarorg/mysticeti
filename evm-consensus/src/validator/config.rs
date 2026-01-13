@@ -100,18 +100,5 @@ mod tests {
         assert_eq!(authority_keypair.public().to_bytes().len(), 96);
         assert_eq!(protocol_keypair.public().to_bytes().len(), 32);
         assert_eq!(network_keypair.public().to_bytes().len(), 32);
-
-        assert_eq!(
-            authority_keypair.public().to_bytes(),
-            protocol_keypair.public().to_bytes()
-        );
-        assert_eq!(
-            authority_keypair.public().to_bytes(),
-            network_keypair.public().to_bytes()
-        );
-        assert_eq!(
-            protocol_keypair.public().to_bytes(),
-            network_keypair.public().to_bytes()
-        );
     }
 }
