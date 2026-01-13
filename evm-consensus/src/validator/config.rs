@@ -66,9 +66,20 @@ impl ValidatorConfig {
     }
 }
 
-mod tests {
-    use super::*;
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthorityConfig {
+    pub index: usize,
+    pub stake: u64,
+    pub hostname: String,
+    pub address: String,
+    pub authority_key: String,
+    pub protocol_key: String,
+    pub network_key: String,
+}
 
+mod tests {
+    use super::ValidatorConfig;
+    // use fastcrypto::traits::KeyPair as _;
     #[test]
     fn test_validator_config() {
         let validator_config = ValidatorConfig {

@@ -113,9 +113,9 @@ enum Commands {
     },
     GenerateValidator {
         #[arg(short, long, default_value = "validator.yml")]
-        output: PathBuf,
-        #[arg(short, long, default_value = "network_public_key.txt")]
-        network_key_path: PathBuf,
+        validator_path: PathBuf,
+        #[arg(short, long, default_value = "authority.yml")]
+        authority_path: PathBuf,
         #[arg(short, long, default_value = "1")]
         stake: u64,
         #[arg(short, long, default_value = "hostname")]
@@ -260,16 +260,16 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::GenerateValidator {
-            output,
-            network_key_path,
+            validator_path,
+            authority_path,
             hostname,
             ip_address,
             port,
             stake,
         } => {
             generate_validator(
-                &output,
-                &network_key_path,
+                &validator_path,
+                &authority_path,
                 hostname,
                 ip_address,
                 port,

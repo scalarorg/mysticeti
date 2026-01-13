@@ -1,4 +1,3 @@
-use crate::{ValidatorConfig, generate_validators};
 use anyhow::Result;
 use consensus_config::{
     Authority, AuthorityPublicKey, Committee, NetworkPublicKey, ProtocolPublicKey,
@@ -6,7 +5,7 @@ use consensus_config::{
 use fastcrypto::{
     bls12381, ed25519,
     hash::{Blake2b256, HashFunction},
-    traits::{KeyPair as _, ToFromBytes as _},
+    traits::ToFromBytes as _,
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -15,7 +14,8 @@ use std::path::Path;
 
 use crate::{
     authority_keypair_from_private_key, network_keypair_from_private_key,
-    protocol_keypair_from_private_key, validator::ValidatorConfigs,
+    protocol_keypair_from_private_key,
+    validator::{AuthorityConfig, ValidatorConfigs},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,18 +26,6 @@ pub struct CommitteeConfig {
     pub quorum_threshold: u64,
     pub validity_threshold: u64,
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AuthorityConfig {
-    pub index: usize,
-    pub stake: u64,
-    pub hostname: String,
-    pub address: String,
-    pub authority_key: String,
-    pub protocol_key: String,
-    pub network_key: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub base_ip: String,
@@ -515,11 +503,18 @@ pub fn generate_validator_sui_address(network_pub_key: &NetworkPublicKey) -> Str
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        AuthorityConfig, CommitteeConfig, GenesisConfig, NetworkConfig, extract_peer_addresses,
+        generate_committees, generate_genesis_config, generate_validator_sui_address, is_valid_ip,
+        is_valid_port, load_committees, parse_ip_port_from_address,
+    };
+    use crate::{ValidatorConfig, ValidatorConfigs, generate_validators};
     use consensus_config::{
         Authority, AuthorityKeyPair, Committee, NetworkKeyPair, ProtocolKeyPair, Stake,
     };
+    use fastcrypto::{bls12381, ed25519, traits::KeyPair as _};
     use rand::{SeedableRng, rngs::StdRng};
+    use std::fs;
 
     // Helper function to create a test committee
     fn create_test_committee() -> Committee {
