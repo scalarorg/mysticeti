@@ -1,28 +1,28 @@
+use crate::{
+    authority_keypair_from_private_key, network_keypair_from_private_key,
+    protocol_keypair_from_private_key,
+    validator::{AuthorityConfig, ValidatorConfigs},
+};
 use anyhow::Result;
 use consensus_config::{
-    Authority, AuthorityPublicKey, Committee, NetworkPublicKey, ProtocolPublicKey,
+    Authority, AuthorityKeyPair, AuthorityPublicKey, Committee, NetworkKeyPair, NetworkPublicKey,
+    ProtocolKeyPair, ProtocolPublicKey,
 };
 use fastcrypto::{
     bls12381, ed25519,
     hash::{Blake2b256, HashFunction},
     traits::ToFromBytes as _,
 };
+use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
 use std::path::Path;
 
-use crate::{
-    authority_keypair_from_private_key, network_keypair_from_private_key,
-    protocol_keypair_from_private_key,
-    validator::{AuthorityConfig, ValidatorConfigs},
-};
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitteeConfig {
     pub epoch: u64,
     pub authorities: Vec<AuthorityConfig>,
-    pub docker_network: NetworkConfig,
     pub quorum_threshold: u64,
     pub validity_threshold: u64,
 }
@@ -116,33 +116,36 @@ fn generate_committee_from_validator_configs(
 
     for (i, validator) in validator_configs.validators.iter().enumerate() {
         // Use provided private keys or generate new ones
-
-        let authority_keypair_hex = validator
-            .authority_private_key
-            .as_ref()
-            .expect("Authority private key is required");
-
-        let authority_keypair =
-            authority_keypair_from_private_key(authority_keypair_hex).map_err(|e| {
+        let authority_keypair = match validator.authority_private_key.as_ref() {
+            Some(hex) => authority_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create authority keypair from private key: {}", e)
-            })?;
-        let protocol_keypair_hex = validator
-            .protocol_private_key
-            .as_ref()
-            .expect("Protocol private key is required");
-        let protocol_keypair =
-            protocol_keypair_from_private_key(protocol_keypair_hex).map_err(|e| {
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let authority_keypair = AuthorityKeyPair::generate(&mut rng);
+                authority_keypair
+            }
+        };
+        let protocol_keypair = match validator.protocol_private_key.as_ref() {
+            Some(hex) => protocol_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
-            })?;
-        let network_keypair_hex = validator
-            .network_private_key
-            .as_ref()
-            .expect("Network private key is required");
-        let network_keypair =
-            network_keypair_from_private_key(network_keypair_hex).map_err(|e| {
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
+                protocol_keypair
+            }
+        };
+        let network_keypair = match validator.network_private_key.as_ref() {
+            Some(hex) => network_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create network keypair from private key: {}", e)
-            })?;
-
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let network_keypair = NetworkKeyPair::generate(&mut rng);
+                network_keypair
+            }
+        };
         let address = format!("/ip4/{}/udp/{}", validator.ip_address, validator.port);
 
         authorities_config.push(AuthorityConfig {
@@ -164,12 +167,6 @@ fn generate_committee_from_validator_configs(
     let committee_config = CommitteeConfig {
         epoch,
         authorities: authorities_config,
-        docker_network: NetworkConfig {
-            base_ip: "172.20.0".to_string(),
-            start_ip: 10,
-            end_ip: 10 + num_authorities as u8 - 1,
-            port: 26657,
-        },
         quorum_threshold,
         validity_threshold,
     };
@@ -375,30 +372,37 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
 
     for validator in &validator_configs.validators {
         // Use provided private keys or generate new ones
-        let authority_keypair_hex = validator
-            .authority_private_key
-            .as_ref()
-            .expect("Authority private key is required");
-        let authority_keypair =
-            authority_keypair_from_private_key(authority_keypair_hex).map_err(|e| {
+
+        let authority_keypair = match validator.authority_private_key.as_ref() {
+            Some(hex) => authority_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create authority keypair from private key: {}", e)
-            })?;
-        // let protocol_keypair_hex = validator
-        //     .protocol_private_key
-        //     .as_ref()
-        //     .expect("Protocol private key is required");
-        // let protocol_keypair =
-        //     protocol_keypair_from_private_key(protocol_keypair_hex).map_err(|e| {
-        //         anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
-        //     })?;
-        let network_keypair_hex = validator
-            .network_private_key
-            .as_ref()
-            .expect("Network private key is required");
-        let network_keypair =
-            network_keypair_from_private_key(network_keypair_hex).map_err(|e| {
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let authority_keypair = AuthorityKeyPair::generate(&mut rng);
+                authority_keypair
+            }
+        };
+        let protocol_keypair = match validator.protocol_private_key.as_ref() {
+            Some(hex) => protocol_keypair_from_private_key(hex).map_err(|e| {
+                anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
+                protocol_keypair
+            }
+        };
+        let network_keypair = match validator.network_private_key.as_ref() {
+            Some(hex) => network_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create network keypair from private key: {}", e)
-            })?;
+            })?,
+            None => {
+                let mut rng = StdRng::from_entropy();
+                let network_keypair = NetworkKeyPair::generate(&mut rng);
+                network_keypair
+            }
+        };
         // Generate Sui-style address from network public key
         // Sui address = Blake2b256(Ed25519_flag || public_key_bytes)[0..32]
         let sui_address = generate_validator_sui_address(&network_keypair.public());
@@ -504,7 +508,7 @@ pub fn generate_validator_sui_address(network_pub_key: &NetworkPublicKey) -> Str
 #[cfg(test)]
 mod tests {
     use super::{
-        AuthorityConfig, CommitteeConfig, GenesisConfig, NetworkConfig, extract_peer_addresses,
+        AuthorityConfig, CommitteeConfig, GenesisConfig, extract_peer_addresses,
         generate_committees, generate_genesis_config, generate_validator_sui_address, is_valid_ip,
         is_valid_port, load_committees, parse_ip_port_from_address,
     };
@@ -729,12 +733,6 @@ mod tests {
                 protocol_key: "key2".to_string(),
                 network_key: "key3".to_string(),
             }],
-            docker_network: NetworkConfig {
-                base_ip: "172.20.0".to_string(),
-                start_ip: 10,
-                end_ip: 11,
-                port: 26657,
-            },
             quorum_threshold: 1,
             validity_threshold: 1,
         };
@@ -821,12 +819,6 @@ mod tests {
             assert!(!authority.protocol_key.is_empty());
             assert!(!authority.network_key.is_empty());
         }
-
-        // Verify docker network configuration
-        assert_eq!(config.docker_network.base_ip, "172.20.0");
-        assert_eq!(config.docker_network.start_ip, 10);
-        assert_eq!(config.docker_network.end_ip, 10 + authorities as u8 - 1); // Should be 13 for 4 authorities
-        assert_eq!(config.docker_network.port, 26657);
 
         // Verify the file can be loaded back using load_committees
         let loaded_committee = load_committees(&committee_path).unwrap();
@@ -1191,7 +1183,7 @@ mod tests {
         use tempfile::tempdir;
 
         let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("validators_input.yml");
+        let config_path = temp_dir.path().join("validators.yml");
         let committee_path = temp_dir.path().join("committees.yml");
 
         // Create a test input file without epoch
