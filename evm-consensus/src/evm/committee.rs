@@ -22,7 +22,6 @@ use crate::{
 pub struct CommitteeConfig {
     pub epoch: u64,
     pub authorities: Vec<AuthorityConfig>,
-    pub docker_network: NetworkConfig,
     pub quorum_threshold: u64,
     pub validity_threshold: u64,
 }
@@ -164,12 +163,6 @@ fn generate_committee_from_validator_configs(
     let committee_config = CommitteeConfig {
         epoch,
         authorities: authorities_config,
-        docker_network: NetworkConfig {
-            base_ip: "172.20.0".to_string(),
-            start_ip: 10,
-            end_ip: 10 + num_authorities as u8 - 1,
-            port: 26657,
-        },
         quorum_threshold,
         validity_threshold,
     };
@@ -729,12 +722,6 @@ mod tests {
                 protocol_key: "key2".to_string(),
                 network_key: "key3".to_string(),
             }],
-            docker_network: NetworkConfig {
-                base_ip: "172.20.0".to_string(),
-                start_ip: 10,
-                end_ip: 11,
-                port: 26657,
-            },
             quorum_threshold: 1,
             validity_threshold: 1,
         };
