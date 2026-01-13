@@ -77,6 +77,7 @@ pub struct AuthorityConfig {
     pub network_key: String,
 }
 
+#[cfg(test)]
 mod tests {
     use super::ValidatorConfig;
     // use fastcrypto::traits::KeyPair as _;
