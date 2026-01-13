@@ -159,7 +159,6 @@ fn generate_committee_from_validator_configs(
         });
     }
 
-    let num_authorities = authorities_config.len();
     let total_stake: u64 = authorities_config.iter().map(|a| a.stake).sum();
     assert_ne!(total_stake, 0, "Total stake cannot be zero!");
     let quorum_threshold = 2 * total_stake / 3 + 1;
@@ -383,16 +382,16 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
                 authority_keypair
             }
         };
-        let protocol_keypair = match validator.protocol_private_key.as_ref() {
-            Some(hex) => protocol_keypair_from_private_key(hex).map_err(|e| {
-                anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
-            })?,
-            None => {
-                let mut rng = StdRng::from_entropy();
-                let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
-                protocol_keypair
-            }
-        };
+        // let protocol_keypair = match validator.protocol_private_key.as_ref() {
+        //     Some(hex) => protocol_keypair_from_private_key(hex).map_err(|e| {
+        //         anyhow::anyhow!("Failed to create protocol keypair from private key: {}", e)
+        //     })?,
+        //     None => {
+        //         let mut rng = StdRng::from_entropy();
+        //         let protocol_keypair = ProtocolKeyPair::generate(&mut rng);
+        //         protocol_keypair
+        //     }
+        // };
         let network_keypair = match validator.network_private_key.as_ref() {
             Some(hex) => network_keypair_from_private_key(hex).map_err(|e| {
                 anyhow::anyhow!("Failed to create network keypair from private key: {}", e)
