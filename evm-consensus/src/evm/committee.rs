@@ -1,18 +1,14 @@
 use crate::{
     authority_keypair_from_private_key, network_keypair_from_private_key,
     protocol_keypair_from_private_key,
-    validator::{AuthorityConfig, ValidatorConfigs},
+    validator::{AuthorityConfig, ValidatorConfigs, generate_validator_sui_address},
 };
 use anyhow::Result;
 use consensus_config::{
     Authority, AuthorityKeyPair, AuthorityPublicKey, Committee, NetworkKeyPair, NetworkPublicKey,
     ProtocolKeyPair, ProtocolPublicKey,
 };
-use fastcrypto::{
-    bls12381, ed25519,
-    hash::{Blake2b256, HashFunction},
-    traits::ToFromBytes as _,
-};
+use fastcrypto::{bls12381, ed25519, traits::ToFromBytes as _};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -156,6 +152,7 @@ fn generate_committee_from_validator_configs(
             authority_key: hex::encode(authority_keypair.public().to_bytes()),
             protocol_key: hex::encode(protocol_keypair.public().to_bytes()),
             network_key: hex::encode(network_keypair.public().to_bytes()),
+            validator_address: generate_validator_sui_address(&network_keypair.public()),
         });
     }
 
@@ -476,42 +473,17 @@ pub fn generate_genesis_config(config_path: &Path, genesis_path: &Path) -> Resul
     Ok(())
 }
 
-/// Generates a Sui-style address from a network public key
-///
-/// This follows Sui's address generation algorithm:
-/// 1. Create a Blake2b256 hasher
-/// 2. Hash the signature scheme flag byte (0x00 for Ed25519)
-/// 3. Hash the public key bytes
-/// 4. Take the first 32 bytes of the digest as the address
-///
-/// Returns the address as a hex string (64 hex characters, no 0x prefix)
-pub fn generate_validator_sui_address(network_pub_key: &NetworkPublicKey) -> String {
-    // Ed25519 signature scheme flag (as per Sui's SignatureScheme::flag())
-    const ED25519_SCHEME_FLAG: u8 = 0x00;
-
-    // Create Blake2b256 hasher (Sui uses Blake2b256, not Keccak256)
-    let mut hasher = Blake2b256::new();
-
-    // Hash the signature scheme flag
-    hasher.update([ED25519_SCHEME_FLAG]);
-
-    // Hash the public key bytes
-    hasher.update(network_pub_key.to_bytes());
-
-    // Get the digest (32 bytes)
-    let address_bytes: [u8; 32] = hasher.finalize().into();
-
-    // Return as hex string (no 0x prefix, 64 hex characters)
-    hex::encode(address_bytes)
-}
 #[cfg(test)]
 mod tests {
     use super::{
         AuthorityConfig, CommitteeConfig, GenesisConfig, extract_peer_addresses,
-        generate_committees, generate_genesis_config, generate_validator_sui_address, is_valid_ip,
-        is_valid_port, load_committees, parse_ip_port_from_address,
+        generate_committees, generate_genesis_config, is_valid_ip, is_valid_port, load_committees,
+        parse_ip_port_from_address,
     };
-    use crate::{ValidatorConfig, ValidatorConfigs, generate_validators};
+    use crate::{
+        ValidatorConfig, ValidatorConfigs, generate_validators,
+        validator::generate_validator_sui_address,
+    };
     use consensus_config::{
         Authority, AuthorityKeyPair, Committee, NetworkKeyPair, ProtocolKeyPair, Stake,
     };
@@ -731,6 +703,7 @@ mod tests {
                 authority_key: "key1".to_string(),
                 protocol_key: "key2".to_string(),
                 network_key: "key3".to_string(),
+                validator_address: "1234567890".to_string(),
             }],
             quorum_threshold: 1,
             validity_threshold: 1,
