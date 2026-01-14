@@ -194,6 +194,29 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     let protocol_keypair = validator_config
         .protocol_keypair()
         .map_err(|e| anyhow!("Failed to create protocol keypair: {}", e))?;
+    let authority_keypair = validator_config
+        .authority_keypair()
+        .map_err(|e| anyhow!("Failed to create authority keypair: {}", e))?;
+    // Validate committee configuration vs network keypair and protocol keypair
+    let mut found = false;
+    for authority in committee.authorities() {
+        let authority_config = authority.1;
+        if network_keypair.public().to_bytes() == authority_config.network_key.to_bytes()
+            || protocol_keypair.public().to_bytes() == authority_config.protocol_key.to_bytes()
+            || authority_keypair.public().to_bytes() == authority_config.authority_key.to_bytes()
+        {
+            found = true;
+            tracing::info!(
+                "Keypair matched with committee config at index: {}",
+                authority.0
+            );
+            break;
+        }
+    }
+    if !found {
+        error!("Keypair not found in committee configuration");
+        return Err(anyhow!("Keypair not found in committee configuration"));
+    }
     // Start the validator node
     validator
         .start(
