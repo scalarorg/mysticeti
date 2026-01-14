@@ -75,6 +75,9 @@ pub struct AuthorityConfig {
     pub authority_key: String,
     pub protocol_key: String,
     pub network_key: String,
+    /// ed25519 format generated from network public key
+    /// This value is used to generate genesis.json for execution layer
+    pub validator_address: String,
 }
 
 #[cfg(test)]

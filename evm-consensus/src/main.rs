@@ -562,7 +562,7 @@ validity_threshold: 1
 
         // This test verifies that the function can be called without panicking
         // The actual result may vary depending on the consensus client setup
-        let result = start_consensus_client(&config_path).await;
+        let _result = start_consensus_client(&config_path).await;
 
         // Test passes if we can call the function without panicking
         // The actual result may be an error due to missing dependencies
@@ -582,7 +582,7 @@ missing_required_fields: true
         fs::write(&invalid_config_path, invalid_content).unwrap();
 
         // This should handle invalid config gracefully
-        let result = start_consensus_client(&invalid_config_path).await;
+        let _result = start_consensus_client(&invalid_config_path).await;
 
         // Test passes if we can handle invalid input without panicking
         assert!(true);
@@ -610,7 +610,7 @@ log_level: info
         fs::write(&config_path, config_content).unwrap();
 
         // This should handle missing committee file gracefully
-        let result = start_consensus_client(&config_path).await;
+        let _result = start_consensus_client(&config_path).await;
 
         // Test passes if we can handle missing files without panicking
         assert!(true);
@@ -669,53 +669,6 @@ log_level: info
             let result: Vec<String> = input.split(',').map(|s| s.trim().to_string()).collect();
             assert_eq!(result, expected);
         }
-    }
-
-    #[test]
-    fn test_registry_service_creation() {
-        let registry = Registry::new();
-        let registry_service = RegistryService::new(registry);
-
-        // Test that we can create the registry service
-        assert!(true);
-    }
-
-    #[test]
-    fn test_validator_node_creation() {
-        let working_directory = PathBuf::from("/tmp/test");
-        let validator = ValidatorNode::new(0, working_directory);
-
-        // Test that we can create the validator node
-        assert!(true);
-    }
-
-    #[test]
-    fn test_path_operations() {
-        let base_path = PathBuf::from("/tmp");
-        let sub_path = base_path.join("test");
-        let final_path = sub_path.join("config.yml");
-
-        assert_eq!(final_path, PathBuf::from("/tmp/test/config.yml"));
-        assert!(final_path.to_string_lossy().contains("config.yml"));
-    }
-
-    #[test]
-    fn test_string_operations() {
-        let test_string = "test_value";
-        let trimmed = test_string.trim();
-        let parsed: u16 = "8080".parse().unwrap();
-
-        assert_eq!(trimmed, "test_value");
-        assert_eq!(parsed, 8080);
-    }
-
-    #[test]
-    fn test_error_handling() {
-        // Test that we can create anyhow errors
-        let error = anyhow::anyhow!("Test error message");
-        let error_string = error.to_string();
-
-        assert!(error_string.contains("Test error message"));
     }
 
     #[test]

@@ -6,7 +6,7 @@ use rpc_shared_api::{
     Transaction, VerifiedBlock,
 };
 
-use crate::evm::committee::generate_validator_sui_address;
+use crate::validator::generate_validator_sui_address;
 
 pub fn create_evm_committed_subdag(
     subdag: CommittedSubDag,

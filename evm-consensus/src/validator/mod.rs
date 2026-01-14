@@ -1,14 +1,48 @@
 mod config;
 use anyhow::Result;
 pub use config::{AuthorityConfig, ValidatorConfig, ValidatorConfigs};
-use consensus_config::{AuthorityKeyPair, NetworkKeyPair, ProtocolKeyPair};
-use fastcrypto::{bls12381, ed25519, traits::KeyPair as _};
+use consensus_config::{AuthorityKeyPair, NetworkKeyPair, NetworkPublicKey, ProtocolKeyPair};
+use fastcrypto::{
+    bls12381, ed25519,
+    hash::{Blake2b256, HashFunction},
+    traits::KeyPair as _,
+};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_yaml;
 use std::fs;
 use std::path::Path;
 use tracing::info;
+
+/// Generates a Sui-style address from a network public key
+///
+/// This follows Sui's address generation algorithm:
+/// 1. Create a Blake2b256 hasher
+/// 2. Hash the signature scheme flag byte (0x00 for Ed25519)
+/// 3. Hash the public key bytes
+/// 4. Take the first 32 bytes of the digest as the address
+///
+/// Returns the address as a hex string (64 hex characters, no 0x prefix)
+pub fn generate_validator_sui_address(network_pub_key: &NetworkPublicKey) -> String {
+    // Ed25519 signature scheme flag (as per Sui's SignatureScheme::flag())
+    const ED25519_SCHEME_FLAG: u8 = 0x00;
+
+    // Create Blake2b256 hasher (Sui uses Blake2b256, not Keccak256)
+    let mut hasher = Blake2b256::new();
+
+    // Hash the signature scheme flag
+    hasher.update([ED25519_SCHEME_FLAG]);
+
+    // Hash the public key bytes
+    hasher.update(network_pub_key.to_bytes());
+
+    // Get the digest (32 bytes)
+    let address_bytes: [u8; 32] = hasher.finalize().into();
+
+    // Return as hex string (no 0x prefix, 64 hex characters)
+    hex::encode(address_bytes)
+}
+
 /// Generates validator configurations and saves them to a YAML file
 ///
 /// This function generates validator configurations based on the provided parameters
@@ -84,6 +118,7 @@ pub fn generate_validator(
         authority_key: hex::encode(authority_keypair.public().to_bytes()),
         protocol_key: hex::encode(protocol_keypair.public().to_bytes()),
         network_key: network_public_key_hex,
+        validator_address: generate_validator_sui_address(&network_keypair.public()),
     };
     let authority_yaml = serde_yaml::to_string(&authority)?;
     fs::write(authority_path, authority_yaml)?;
