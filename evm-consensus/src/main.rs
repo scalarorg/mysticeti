@@ -5,14 +5,14 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use consensus_config::{Authority, Parameters};
+use consensus_config::{Authority, Committee, Parameters};
 use consensus_core::CommitConsumerArgs;
 use evm_consensus::evm::{
     RawTransactionClient, extract_peer_addresses, generate_committees, generate_genesis_config,
     load_committees,
 };
 
-use evm_consensus::{generate_validator, generate_validators, load_validator};
+use evm_consensus::{ValidatorConfig, generate_validator, generate_validators, load_validator};
 use execute::validator::ValidatorNode;
 use mysten_metrics::{RegistryService, monitored_mpsc::unbounded_channel};
 use prometheus::Registry;
@@ -38,7 +38,6 @@ struct NodeConfig {
     timeout: u64,
     working_directory: String,
     peer_addresses: Vec<String>,
-    node_index: u32,
     log_level: String,
 }
 
@@ -132,7 +131,29 @@ enum Commands {
         config: PathBuf,
     },
 }
-
+fn find_authority_index(
+    committee: &Committee,
+    validator_config: &ValidatorConfig,
+) -> Result<usize> {
+    let network_keypair = validator_config
+        .network_keypair()
+        .map_err(|e| anyhow!("Failed to create network keypair: {}", e))?;
+    let protocol_keypair = validator_config
+        .protocol_keypair()
+        .map_err(|e| anyhow!("Failed to create protocol keypair: {}", e))?;
+    let authority_keypair = validator_config
+        .authority_keypair()
+        .map_err(|e| anyhow!("Failed to create authority keypair: {}", e))?;
+    for (index, authority) in committee.authorities() {
+        if network_keypair.public().to_bytes() == authority.network_key.to_bytes()
+            || protocol_keypair.public().to_bytes() == authority.protocol_key.to_bytes()
+            || authority_keypair.public().to_bytes() == authority.authority_key.to_bytes()
+        {
+            return Ok(index.value());
+        }
+    }
+    Err(anyhow!("Authority not found in committee configuration"))
+}
 /// Starts the consensus client with the given configuration
 async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     // Load the full configuration
@@ -166,9 +187,15 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
         .with_target(false)
         .init();
 
-    info!(
+    let authority_index = find_authority_index(&committee, &validator_config).map_err(|e| {
+        anyhow!(
+            "Validator config does not match any authority in committee configuration: {}",
+            e
+        )
+    })?;
+    tracing::info!(
         "Starting FastEVM Consensus Client (Node {}, Execution HTTP URL: {}, Execution WS URL: {}, Working Directory: {}, Fee Recipient: {})",
-        node_config.node_index,
+        authority_index,
         node_config.execution_http_url,
         node_config.execution_ws_url,
         node_config.working_directory,
@@ -177,7 +204,7 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
 
     // Create validator node
     let mut validator = ValidatorNode::new(
-        node_config.node_index,
+        authority_index as u32,
         PathBuf::from(&node_config.working_directory),
     );
 
@@ -194,6 +221,7 @@ async fn start_consensus_client(config_path: &PathBuf) -> Result<()> {
     let protocol_keypair = validator_config
         .protocol_keypair()
         .map_err(|e| anyhow!("Failed to create protocol keypair: {}", e))?;
+
     // Start the validator node
     validator
         .start(
